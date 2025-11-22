@@ -11,6 +11,8 @@ import {
   InputGroupInput,
 } from "./ui/input-group";
 import { Separator } from "./ui/separator";
+import Threads from "./Threads";
+
 
 type message = {
     id: string;
@@ -131,9 +133,18 @@ export function ChatUI() {
     }
 
     return (
-        <div className="flex h-full flex-col bg-background text-foreground overflow-hidden">
+        <div className="flex h-full flex-col bg-background text-foreground overflow-hidden relative">
+          {/* Background Threads animation */}
+          <div className="absolute inset-0 w-full h-full pointer-events-none z-0">
+            <Threads
+              amplitude={3}
+              distance={0}
+              enableMouseInteraction={true}
+              color={[1, 1, 1]}
+            />
+          </div>
           {/* Main scrollable area - scrollbar on right edge */}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto relative z-10">
             <div className="flex justify-center px-4 py-6">
               <div className="flex w-full max-w-4xl flex-col gap-4">
                 {/* Header */}
@@ -143,22 +154,6 @@ export function ChatUI() {
                     How can I help you today?
                   </p>
                 </header>
-      
-                {/* Suggested prompts (only when there are no messages) */}
-                {messages.length === 0 && (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => handleSuggestionClick(s)}
-                        className="rounded-full border border-border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
       
                 {/* Messages area */}
                 {messages.length > 0 && (
@@ -223,10 +218,27 @@ export function ChatUI() {
             </div>
           </main>
     
-          <Separator />
+          <Separator className="relative z-10" />
     
           {/* Bottom input bar - fixed */}
-          <footer className="w-full px-4 py-3 flex-shrink-0">
+          <footer className="w-full px-4 py-3 flex-shrink-0 relative z-10">
+            {/* Suggested prompts - above input bar */}
+            {messages.length === 0 && (
+              <div className="mx-auto mb-3 w-full max-w-4xl">
+                <div className="grid gap-3 md:grid-cols-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleSuggestionClick(s)}
+                      className="rounded-full border border-border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-accent-foreground hover:border-primary hover:shadow-md hover:scale-[1.02]"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Attached files display */}
             {attachedFiles.length > 0 && (
               <div className="mx-auto mb-2 w-full max-w-4xl">
@@ -278,6 +290,7 @@ export function ChatUI() {
                     size="icon"
                     onClick={handleAttachFile}
                     aria-label="Attach file"
+                    className="transition-all duration-200 hover:bg-accent hover:border-primary hover:shadow-md hover:scale-105"
                   >
                     <Paperclip />
                   </Button>
@@ -294,7 +307,7 @@ export function ChatUI() {
                         type="submit"
                         size="icon-xs"
                         disabled={!input.trim() && attachedFiles.length === 0}
-                        className="rounded-full"
+                        className="rounded-full transition-all duration-200 hover:bg-primary/90 hover:shadow-md hover:scale-110 disabled:hover:scale-100 disabled:hover:shadow-none"
                       >
                         ➤
                       </InputGroupButton>
