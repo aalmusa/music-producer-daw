@@ -1,14 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { Music, Paperclip, X, File } from "lucide-react";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { ButtonGroup } from "./ui/button-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "./ui/input-group";
 import { Separator } from "./ui/separator";
 
 type message = {
     id: string;
     role: "user" | "Ai";
     content: string;
+    attachedFiles?: AttachedFile[];
+};
+
+type AttachedFile = {
+    id: string;
+    file: File;
+    name: string;
+    size: number;
+    type: string;
 };
 
 const SUGGESTIONS = [
@@ -21,21 +37,32 @@ const SUGGESTIONS = [
 export function ChatUI() {
     const [messages, setMessages] = useState<message[]>([]);
     const [input, setInput] = useState("");
+    const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    function addMessage(content: string, role: "user" | "Ai") {
+    function addMessage(content: string, role: "user" | "Ai", files?: AttachedFile[]) {
         setMessages((prev) => [
             ...prev,
-            { id: crypto.randomUUID(), role, content },
+            { 
+                id: crypto.randomUUID(), 
+                role, 
+                content,
+                attachedFiles: files && files.length > 0 ? files : undefined,
+            },
         ]);
     }
 
     function handleSend(e?: React.FormEvent) {
         e?.preventDefault();
         const text = input.trim();
-        if (!text) return;
+        if (!text && attachedFiles.length === 0) return;
 
-        addMessage(text, "user");
+        // Send message with text and/or files
+        const messageContent = text || `Sent ${attachedFiles.length} file(s)`;
+        const filesToSend = [...attachedFiles]; // Copy files before clearing
+        addMessage(messageContent, "user", filesToSend);
         setInput("");
+        setAttachedFiles([]); // Clear attached files after sending
 
         setTimeout(() => {
             addMessage("This is a placeholder assistant response.", "Ai");
@@ -50,8 +77,61 @@ export function ChatUI() {
         }, 0);
     }
 
+    function handleAttachFile() {
+        fileInputRef.current?.click();
+    }
+
+    function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            const fileArray = Array.from(files);
+            const newFiles: AttachedFile[] = fileArray.map((file) => ({
+                id: crypto.randomUUID(),
+                file,
+                name: file.name,
+                size: file.size,
+                type: file.type,
+            }));
+            
+            setAttachedFiles((prev) => [...prev, ...newFiles]);
+            
+            // Store files (for now in memory, can be extended to save to disk/flat-file)
+            // TODO: Implement file storage to disk or flat-file system
+            newFiles.forEach((attachedFile) => {
+                // Store file data - in a real implementation, you would:
+                // 1. Save to disk using Node.js fs module (server-side)
+                // 2. Or use IndexedDB for client-side storage
+                // 3. Or upload to a cloud storage service
+                console.log("File stored:", attachedFile.name, attachedFile.size, "bytes");
+            });
+        }
+        // Reset the input so the same file can be selected again if needed
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    }
+
+    function handleRemoveFile(fileId: string) {
+        setAttachedFiles((prev) => {
+            const fileToRemove = prev.find((f) => f.id === fileId);
+            if (fileToRemove) {
+                // TODO: Remove file from disk/flat-file storage
+                console.log("File removed:", fileToRemove.name);
+            }
+            return prev.filter((f) => f.id !== fileId);
+        });
+    }
+
+    function formatFileSize(bytes: number): string {
+        if (bytes === 0) return "0 Bytes";
+        const k = 1024;
+        const sizes = ["Bytes", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+    }
+
     return (
-        <div className="flex h-screen flex-col bg-background text-foreground overflow-hidden">
+        <div className="flex h-full flex-col bg-background text-foreground overflow-hidden">
           {/* Main scrollable area - scrollbar on right edge */}
           <main className="flex-1 overflow-y-auto">
             <div className="flex justify-center px-4 py-6">
@@ -86,18 +166,54 @@ export function ChatUI() {
                     {messages.map((m) => (
                       <div
                         key={m.id}
-                        className={`flex ${
-                          m.role === "user" ? "justify-end" : "justify-start"
+                        className={`flex flex-col items-end gap-2 ${
+                          m.role === "user" ? "items-end" : "items-start"
                         }`}
                       >
                         <div
-                          className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                            m.role === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-foreground"
+                          className={`flex items-start gap-2 w-full ${
+                            m.role === "user" ? "justify-end" : "justify-start"
                           }`}
                         >
-                          {m.content}
+                          {m.role === "Ai" && (
+                            <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-muted border border-border mt-0.5">
+                              <Music className="h-4 w-4 text-foreground" />
+                            </div>
+                          )}
+                          <div className={`flex flex-col gap-2 max-w-[80%] ${
+                            m.role === "user" ? "items-end" : "items-start"
+                          }`}>
+                            {/* Show attached files above message for user messages */}
+                            {m.role === "user" && m.attachedFiles && m.attachedFiles.length > 0 && (
+                              <div className="flex flex-wrap gap-2 justify-end">
+                                {m.attachedFiles.map((attachedFile) => (
+                                  <div
+                                    key={attachedFile.id}
+                                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm"
+                                  >
+                                    <File className="h-4 w-4 text-muted-foreground" />
+                                    <div className="flex flex-col">
+                                      <span className="font-medium text-foreground">
+                                        {attachedFile.name}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {formatFileSize(attachedFile.size)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div
+                              className={`rounded-2xl px-3 py-2 text-sm w-fit ${
+                                m.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-foreground"
+                              }`}
+                            >
+                              {m.content}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -111,24 +227,81 @@ export function ChatUI() {
     
           {/* Bottom input bar - fixed */}
           <footer className="w-full px-4 py-3 flex-shrink-0">
+            {/* Attached files display */}
+            {attachedFiles.length > 0 && (
+              <div className="mx-auto mb-2 w-full max-w-4xl">
+                <div className="flex flex-wrap gap-2">
+                  {attachedFiles.map((attachedFile) => (
+                    <div
+                      key={attachedFile.id}
+                      className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm"
+                    >
+                      <File className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">
+                          {attachedFile.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatFileSize(attachedFile.size)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(attachedFile.id)}
+                        className="ml-1 rounded-full p-1 hover:bg-muted transition-colors"
+                        aria-label={`Remove ${attachedFile.name}`}
+                      >
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <form
               onSubmit={handleSend}
-              className="mx-auto flex w-full max-w-4xl items-center gap-2 rounded-full border border-border bg-card px-3 py-2"
+              className="mx-auto flex w-full max-w-4xl items-center"
             >
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Send a message..."
-                className="border-0 bg-transparent shadow-none focus-visible:ring-0"
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+                aria-label="Attach file"
               />
-              <Button
-                type="submit"
-                size="icon"
-                className="rounded-full"
-                disabled={!input.trim()}
-              >
-                ➤
-              </Button>
+              <ButtonGroup className="[--radius:9999rem] w-full">
+                <ButtonGroup>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleAttachFile}
+                    aria-label="Attach file"
+                  >
+                    <Paperclip />
+                  </Button>
+                </ButtonGroup>
+                <ButtonGroup className="flex-1">
+                  <InputGroup className="rounded-full border border-border bg-card">
+                    <InputGroupInput
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Send a message..."
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        type="submit"
+                        size="icon-xs"
+                        disabled={!input.trim() && attachedFiles.length === 0}
+                        className="rounded-full"
+                      >
+                        ➤
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </ButtonGroup>
+              </ButtonGroup>
             </form>
           </footer>
         </div>

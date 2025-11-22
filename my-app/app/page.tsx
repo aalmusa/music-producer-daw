@@ -1,10 +1,17 @@
-import { Button } from "@/components/ui/button";
-import { ChatUI } from "@/components/chat-ui";
+import { AppSidebar } from "@/components/app-sidebar"
+import { ChatUI } from "@/components/chat-ui"
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
 
 export default function Home() {
   return (
-    <div>
-      <ChatUI />
-    </div>
+    <SidebarProvider className="h-screen">
+      <AppSidebar />
+      <SidebarInset className="h-screen">
+        <ChatUI />
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
