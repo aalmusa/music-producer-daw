@@ -1,6 +1,6 @@
 'use client';
 
-import { setTrackMute, updateMidiPart } from '@/lib/audioEngine';
+import { setTrackMute, updateMidiParts } from '@/lib/audioEngine';
 import {
   Track,
   createDemoMidiClip,
@@ -38,7 +38,7 @@ export default function DawShell() {
       muted: false,
       solo: false,
       volume: 1,
-      midiClip: createDemoMidiClip(),
+      midiClips: [createDemoMidiClip(0), createEmptyMidiClip(4, 4)],
     },
     {
       id: '3',
@@ -48,15 +48,15 @@ export default function DawShell() {
       muted: false,
       solo: false,
       volume: 1,
-      midiClip: createEmptyMidiClip(),
+      midiClips: [createEmptyMidiClip(4, 0)],
     },
   ]);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
     tracks.forEach((track) => {
-      if (track.type === 'midi' && track.midiClip) {
-        updateMidiPart(track.id, track.midiClip);
+      if (track.type === 'midi' && track.midiClips) {
+        updateMidiParts(track.id, track.midiClips);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
