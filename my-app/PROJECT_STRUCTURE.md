@@ -151,11 +151,13 @@ Simple LangChain + Gemini chat interface (baseline implementation).
 
   /daw-assistant/page.tsx           # Audio loop UI
   /elevenlabs-test/page.tsx         # Audio generation test UI
+  /library/page.tsx                 # File library & management UI
   /midi-assistant/page.tsx          # MIDI pattern chat UI
   /langchain/page.tsx               # Basic AI chat UI
 
 /lib
   /midi-generator.ts                # MIDI generation logic
+  /storage.ts                       # IndexedDB storage system
   /utils.ts                         # General utilities
 
 /types
@@ -273,6 +275,8 @@ npm run lint
 
 - **MIDI Assistant**: `MIDI_ASSISTANT_README.md`
 - **DAW Assistant**: `DAW_ASSISTANT_README.md`
+- **Storage System**: `STORAGE_SYSTEM_README.md`
+- **MIDI Fix Notes**: `MIDI_FIX_NOTES.md`
 - **Project Structure**: `PROJECT_STRUCTURE.md` (this file)
 
 ---

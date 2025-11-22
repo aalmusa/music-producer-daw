@@ -1,5 +1,6 @@
 'use client';
 
+import { saveFile } from '@/lib/storage';
 import type {
   InstrumentLoop,
   MusicProductionRequest,
@@ -63,6 +64,28 @@ export default function DAWAssistantPage() {
           order: generatedLoops.length,
         };
         setGeneratedLoops((prev) => [...prev, loopWithOrder]);
+
+        // Auto-save to library
+        try {
+          await saveFile({
+            name: `${data.loop.instrument} - ${data.loop.metadata.title}`,
+            type: 'audio',
+            data: data.loop.audioUrl.split(',')[1], // Remove data:audio/mpeg;base64, prefix
+            metadata: {
+              tempo: songContext.tempo,
+              key: songContext.key,
+              timeSignature: songContext.timeSignature,
+              genre: songContext.genre,
+              description: data.loop.metadata.description,
+              duration: data.loop.bars,
+              instrument: data.loop.instrument,
+            },
+            tags: [songContext.genre, data.loop.instrument, songContext.mood],
+          });
+          console.log('✅ Saved to library');
+        } catch (error) {
+          console.error('Failed to save to library:', error);
+        }
       }
 
       // Clear the user request for the next one

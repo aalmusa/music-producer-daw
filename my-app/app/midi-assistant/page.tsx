@@ -1,5 +1,6 @@
 'use client';
 
+import { saveFile } from '@/lib/storage';
 import type {
   MidiGenerationContext,
   MidiGenerationRequest,
@@ -80,14 +81,42 @@ export default function MidiAssistantPage() {
 
       // If MIDI pattern was generated, save it
       if (data.midiPattern && data.midiFileData) {
-        setGeneratedPatterns((prev) => [
-          ...prev,
-          {
-            pattern: data.midiPattern!,
-            midiData: data.midiFileData!,
-            timestamp: Date.now(),
-          },
-        ]);
+        const newPattern = {
+          pattern: data.midiPattern!,
+          midiData: data.midiFileData!,
+          timestamp: Date.now(),
+        };
+
+        setGeneratedPatterns((prev) => [...prev, newPattern]);
+
+        // Auto-save to library
+        try {
+          await saveFile({
+            name: data.midiPattern!.name,
+            type: 'midi',
+            data: data.midiFileData!,
+            metadata: {
+              tempo: data.midiPattern!.tempo,
+              key: data.midiPattern!.key,
+              timeSignature: data.midiPattern!.timeSignature,
+              genre: songContext.genre,
+              description: data.assistantMessage,
+              duration: data.midiPattern!.lengthInBars,
+              patternType: data.midiPattern!.name,
+              chordProgression: data.chordProgression?.chords
+                .map((c) => c.name)
+                .join(' '),
+            },
+            tags: [
+              songContext.genre,
+              data.midiPattern!.key,
+              data.midiPattern!.name.split(' ')[0],
+            ],
+          });
+          console.log('✅ Saved to library');
+        } catch (error) {
+          console.error('Failed to save to library:', error);
+        }
       }
     } catch (err) {
       console.error('Error:', err);
@@ -127,11 +156,11 @@ export default function MidiAssistantPage() {
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      
+
       // Create blob with proper MIDI type
       const blob = new Blob([bytes], { type: 'audio/midi' });
       const url = URL.createObjectURL(blob);
-      
+
       // Download
       const a = document.createElement('a');
       a.href = url;
