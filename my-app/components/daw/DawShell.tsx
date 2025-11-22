@@ -1,6 +1,6 @@
 'use client';
 
-import { removeMidiTrack, setTrackMute, updateMidiPart } from '@/lib/audioEngine';
+import { removeMidiTrack, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
@@ -47,7 +47,7 @@ export default function DawShell() {
       muted: false,
       solo: false,
       volume: 1,
-      midiClip: createDemoMidiClip(),
+      midiClips: [createDemoMidiClip(0), createEmptyMidiClip(4, 4)],
     },
     {
       id: '3',
@@ -57,15 +57,15 @@ export default function DawShell() {
       muted: false,
       solo: false,
       volume: 1,
-      midiClip: createEmptyMidiClip(),
+      midiClips: [createEmptyMidiClip(4, 0)],
     },
   ]);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
     tracks.forEach((track) => {
-      if (track.type === 'midi' && track.midiClip) {
-        updateMidiPart(track.id, track.midiClip);
+      if (track.type === 'midi' && track.midiClips) {
+        updateMidiParts(track.id, track.midiClips);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,8 +131,8 @@ export default function DawShell() {
       setTracks((prev) => [...prev, newTrack]);
 
       // Initialize MIDI part if it's a MIDI track
-      if (trackType === 'midi' && newTrack.midiClip) {
-        updateMidiPart(newTrack.id, newTrack.midiClip);
+      if (trackType === 'midi' && newTrack.midiClips) {
+        updateMidiParts(newTrack.id, newTrack.midiClips);
       }
 
       return newTrack;
@@ -191,6 +191,36 @@ export default function DawShell() {
       setIsTrackDialogOpen(false);
     },
     [tracks.length]
+  );
+
+  // Attach a sample to a MIDI track
+  const handleAttachSampleToMidiTrack = useCallback(
+    (trackId: string, audioPath: string | null) => {
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id === trackId && track.type === 'midi') {
+            // Update the track with the new sampler URL (convert null to undefined)
+            const updatedTrack: Track = {
+              ...track,
+              samplerAudioUrl: audioPath ?? undefined,
+            };
+
+            // Update the MIDI part to use the sampler
+            if (track.midiClips) {
+              updateMidiParts(
+                trackId,
+                track.midiClips,
+                audioPath ?? undefined
+              );
+            }
+
+            return updatedTrack;
+          }
+          return track;
+        })
+      );
+    },
+    []
   );
 
   const handleDeleteTrack = useCallback((trackId: string) => {
@@ -254,6 +284,7 @@ export default function DawShell() {
               onToggleSolo={handleToggleSolo}
               onAddTrack={handleAddTrackClick}
               onDeleteTrack={handleDeleteTrack}
+              onAttachSample={handleAttachSampleToMidiTrack}
             />
           </aside>
 

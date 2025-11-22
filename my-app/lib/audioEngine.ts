@@ -9,12 +9,14 @@ export const LOOP_BARS = 16; // same as the number of measures in Timeline
 const transport = Tone.getTransport();
 
 let isInitialized = false;
+let metronomeEnabled = false; // Metronome state
 let metronomeLoop: Tone.Loop | null = null;
 let metronomeSynth: Tone.MembraneSynth | null = null;
 
 // MIDI synthesizers and parts
 const synthMap = new Map<string, Tone.PolySynth>();
-const midiPartMap = new Map<string, Tone.Part>();
+const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
+const samplerMap = new Map<string, Tone.Sampler>(); // Samplers for drum samples
 
 export async function initAudio() {
   if (!isInitialized) {
@@ -32,7 +34,7 @@ export async function initAudio() {
       metronomeSynth?.triggerAttackRelease('C2', '8n', time);
     }, '4n');
 
-    metronomeLoop.start(0);
+    // Don't auto-start metronome - user toggles via button
     isInitialized = true;
   }
 }
@@ -53,20 +55,39 @@ export function getTransportPosition(): string {
   return transport.position.toString();
 }
 
+export function toggleMetronome(): boolean {
+  if (!metronomeLoop) return false;
+  
+  metronomeEnabled = !metronomeEnabled;
+  
+  if (metronomeEnabled) {
+    metronomeLoop.start(0);
+  } else {
+    metronomeLoop.stop();
+  }
+  
+  return metronomeEnabled;
+}
+
+export function isMetronomeEnabled(): boolean {
+  return metronomeEnabled;
+}
+
 // Progress from 0 to 1 across the loop
 export function getLoopProgress(): number {
-  const parts = transport.position.toString().split('.');
-  const bars = parseInt(parts[0] ?? '0', 10);
-  const beats = parseInt(parts[1] ?? '0', 10);
-  const six = parseInt(parts[2] ?? '0', 10);
+  // Get current position in seconds
+  const seconds = transport.seconds;
 
-  const beatsPerBar = 4;
-  const totalBeats = bars * beatsPerBar + beats + six / 4;
-  const loopBeats = LOOP_BARS * beatsPerBar;
+  // Get loop duration in seconds
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
 
-  if (!loopBeats) return 0;
+  if (!loopDuration) return 0;
 
-  return (totalBeats % loopBeats) / loopBeats;
+  // Calculate position within the loop (0 to 1)
+  // Modulo ensures we stay within 0-1 range even if transport goes beyond loop end
+  const progress = (seconds % loopDuration) / loopDuration;
+
+  return Math.max(0, Math.min(1, progress));
 }
 
 // ============ MIDI SYNTH FUNCTIONS ============
@@ -97,61 +118,165 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
 }
 
 /**
- * Updates the MIDI part for a track with new clip data
+ * Creates or retrieves a sampler for a track
+ * Samplers play audio files triggered by MIDI notes
  */
-export function updateMidiPart(trackId: string, clipData: MidiClipData | null) {
-  // Remove existing part if it exists
-  const existingPart = midiPartMap.get(trackId);
-  if (existingPart) {
-    existingPart.stop();
-    existingPart.dispose();
-    midiPartMap.delete(trackId);
+export async function getSamplerForTrack(
+  trackId: string,
+  audioUrl: string
+): Promise<Tone.Sampler> {
+  let sampler = samplerMap.get(trackId);
+
+  // Always create new sampler to ensure correct audio file is loaded
+  if (!sampler) {
+    // Create new sampler with the audio file
+    // Map all MIDI notes to the same sample (one-shot playback)
+    const urls: { [key: string]: string } = {};
+    const noteNames = [
+      'C',
+      'C#',
+      'D',
+      'D#',
+      'E',
+      'F',
+      'F#',
+      'G',
+      'G#',
+      'A',
+      'A#',
+      'B',
+    ];
+
+    // Create mappings for multiple octaves so any MIDI note triggers the sample
+    for (let octave = 0; octave <= 8; octave++) {
+      for (const noteName of noteNames) {
+        urls[`${noteName}${octave}`] = audioUrl;
+      }
+    }
+
+    sampler = new Tone.Sampler(urls, {
+      onload: () => {
+        console.log(`✓ Sample loaded for track ${trackId}`);
+      },
+      onerror: (err) => {
+        console.error(`✗ Failed to load sample for track ${trackId}:`, err);
+      },
+    }).toDestination();
+
+    samplerMap.set(trackId, sampler);
   }
 
-  // If no clip data, just return (track is empty)
-  if (!clipData || clipData.notes.length === 0) {
-    return;
-  }
-
-  const synth = getSynthForTrack(trackId);
-
-  // Convert MIDI notes to Tone.js Part events
-  const events = clipData.notes.map((note: MidiNote) => ({
-    time: `${note.start}m`, // Convert bars to musical time
-    note: noteNumberToName(note.pitch),
-    duration: `${note.duration}m`,
-    velocity: note.velocity,
-  }));
-
-  // Create a new Part
-  const part = new Tone.Part((time, value) => {
-    synth.triggerAttackRelease(
-      value.note,
-      value.duration,
-      time,
-      value.velocity
-    );
-  }, events);
-
-  // Set part to loop within the clip's bar range
-  part.loop = true;
-  part.loopStart = 0;
-  part.loopEnd = `${clipData.bars}m`;
-
-  // Start the part at time 0 in the transport
-  part.start(0);
-
-  midiPartMap.set(trackId, part);
+  return sampler;
 }
 
 /**
- * Removes a track's MIDI part and synth
+ * Updates all MIDI parts for a track with multiple clips
+ * Supports both synth and sampler playback
+ */
+export async function updateMidiParts(
+  trackId: string,
+  clips: MidiClipData[] | null | undefined,
+  samplerAudioUrl?: string | null // Optional: if provided, use sampler instead of synth
+) {
+  // Remove existing parts if they exist
+  const existingParts = midiPartMap.get(trackId);
+  if (existingParts) {
+    existingParts.forEach((part) => {
+      part.stop();
+      part.dispose();
+    });
+    midiPartMap.delete(trackId);
+  }
+
+  // If no clips, just return (track is empty)
+  if (!clips || clips.length === 0) {
+    return;
+  }
+
+  // Determine if we should use sampler or synth
+  let instrument: Tone.PolySynth | Tone.Sampler;
+  if (samplerAudioUrl) {
+    instrument = await getSamplerForTrack(trackId, samplerAudioUrl);
+  } else {
+    instrument = getSynthForTrack(trackId);
+  }
+
+  const parts: Tone.Part[] = [];
+
+  // Create a part for each clip
+  clips.forEach((clipData) => {
+    if (clipData.notes.length === 0) return;
+
+    // Convert MIDI notes to Tone.js Part events
+    // Note times are relative to the clip (0 to clipData.bars)
+    const events = clipData.notes.map((note: MidiNote) => ({
+      time: `${note.start}m`, // Relative to clip start
+      note: noteNumberToName(note.pitch),
+      duration: `${note.duration}m`,
+      velocity: note.velocity,
+    }));
+
+    // Create a Part for this clip
+    const part = new Tone.Part((time, value) => {
+      if (instrument instanceof Tone.Sampler) {
+        // For samplers, trigger the sample
+        (instrument as Tone.Sampler).triggerAttackRelease(
+          value.note,
+          value.duration,
+          time,
+          value.velocity
+        );
+      } else {
+        // For synths, trigger the note
+        (instrument as Tone.PolySynth).triggerAttackRelease(
+          value.note,
+          value.duration,
+          time,
+          value.velocity
+        );
+      }
+    }, events);
+
+    // DON'T loop the part - let the transport loop handle it
+    part.loop = false;
+
+    // Start this part at the clip's position in the timeline
+    // This is the key fix: position in the 16-bar timeline
+    part.start(`${clipData.startBar}m`);
+
+    // Stop it after the clip duration
+    part.stop(`${clipData.startBar + clipData.bars}m`);
+
+    parts.push(part);
+  });
+
+  if (parts.length > 0) {
+    midiPartMap.set(trackId, parts);
+  }
+}
+
+/**
+ * Legacy function for single clip - redirects to new function
+ * @deprecated Use updateMidiParts instead
+ */
+export function updateMidiPart(trackId: string, clipData: MidiClipData | null) {
+  if (clipData) {
+    updateMidiParts(trackId, [clipData]);
+  } else {
+    updateMidiParts(trackId, null);
+  }
+}
+
+/**
+ * Removes a track's MIDI parts, synth, and sampler
  */
 export function removeMidiTrack(trackId: string) {
-  const part = midiPartMap.get(trackId);
-  if (part) {
-    part.stop();
-    part.dispose();
+  const parts = midiPartMap.get(trackId);
+  if (parts) {
+    parts.forEach((part) => {
+      part.stop();
+      part.dispose();
+    });
     midiPartMap.delete(trackId);
   }
 
@@ -160,15 +285,26 @@ export function removeMidiTrack(trackId: string) {
     synth.dispose();
     synthMap.delete(trackId);
   }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    sampler.dispose();
+    samplerMap.delete(trackId);
+  }
 }
 
 /**
- * Mutes or unmutes a track's synth
+ * Mutes or unmutes a track's synth or sampler
  */
 export function setTrackMute(trackId: string, muted: boolean) {
   const synth = synthMap.get(trackId);
   if (synth) {
     synth.volume.value = muted ? -Infinity : 0;
+  }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    sampler.volume.value = muted ? -Infinity : 0;
   }
 }
 

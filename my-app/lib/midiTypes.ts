@@ -12,6 +12,8 @@ export interface MidiClipData {
   id: string;
   notes: MidiNote[];
   bars: number; // Number of bars in the clip (4 for 4-bar clips)
+  startBar: number; // Which bar in the timeline this clip starts at (0-based)
+  color?: string; // Optional color for the clip
 }
 
 export interface Track {
@@ -24,8 +26,11 @@ export interface Track {
   volume: number;
   // For audio tracks
   audioUrl?: string;
-  // For MIDI tracks
-  midiClip?: MidiClipData;
+  // For MIDI tracks - now supports multiple clips
+  midiClips?: MidiClipData[];
+  // For MIDI tracks that use samples instead of synth
+  // Maps MIDI note numbers to audio files
+  samplerAudioUrl?: string | null; // Audio file to use as sample
 }
 
 // MIDI note utilities
@@ -73,19 +78,24 @@ export function noteNameToNumber(noteName: string): number {
 }
 
 // Create a default empty MIDI clip
-export function createEmptyMidiClip(bars: number = 4): MidiClipData {
+export function createEmptyMidiClip(
+  bars: number = 4,
+  startBar: number = 0
+): MidiClipData {
   return {
     id: crypto.randomUUID(),
     notes: [],
     bars,
+    startBar,
   };
 }
 
 // Create a demo MIDI clip with some notes
-export function createDemoMidiClip(): MidiClipData {
+export function createDemoMidiClip(startBar: number = 0): MidiClipData {
   return {
     id: crypto.randomUUID(),
     bars: 4,
+    startBar,
     notes: [
       // C major chord progression
       {
