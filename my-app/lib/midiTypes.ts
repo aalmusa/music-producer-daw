@@ -28,6 +28,9 @@ export interface Track {
   audioUrl?: string;
   // For MIDI tracks - now supports multiple clips
   midiClips?: MidiClipData[];
+  // For MIDI tracks that use samples instead of synth
+  // Maps MIDI note numbers to audio files
+  samplerAudioUrl?: string | null; // Audio file to use as sample
 }
 
 // MIDI note utilities

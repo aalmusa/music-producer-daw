@@ -9,12 +9,14 @@ export const LOOP_BARS = 16; // same as the number of measures in Timeline
 const transport = Tone.getTransport();
 
 let isInitialized = false;
+let metronomeEnabled = false; // Metronome state
 let metronomeLoop: Tone.Loop | null = null;
 let metronomeSynth: Tone.MembraneSynth | null = null;
 
 // MIDI synthesizers and parts
 const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
+const samplerMap = new Map<string, Tone.Sampler>(); // Samplers for drum samples
 
 export async function initAudio() {
   if (!isInitialized) {
@@ -32,7 +34,7 @@ export async function initAudio() {
       metronomeSynth?.triggerAttackRelease('C2', '8n', time);
     }, '4n');
 
-    metronomeLoop.start(0);
+    // Don't auto-start metronome - user toggles via button
     isInitialized = true;
   }
 }
@@ -51,6 +53,24 @@ export function setBpm(bpm: number) {
 
 export function getTransportPosition(): string {
   return transport.position.toString();
+}
+
+export function toggleMetronome(): boolean {
+  if (!metronomeLoop) return false;
+  
+  metronomeEnabled = !metronomeEnabled;
+  
+  if (metronomeEnabled) {
+    metronomeLoop.start(0);
+  } else {
+    metronomeLoop.stop();
+  }
+  
+  return metronomeEnabled;
+}
+
+export function isMetronomeEnabled(): boolean {
+  return metronomeEnabled;
 }
 
 // Progress from 0 to 1 across the loop
@@ -98,11 +118,65 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
 }
 
 /**
- * Updates all MIDI parts for a track with multiple clips
+ * Creates or retrieves a sampler for a track
+ * Samplers play audio files triggered by MIDI notes
  */
-export function updateMidiParts(
+export async function getSamplerForTrack(
   trackId: string,
-  clips: MidiClipData[] | null | undefined
+  audioUrl: string
+): Promise<Tone.Sampler> {
+  let sampler = samplerMap.get(trackId);
+
+  // Always create new sampler to ensure correct audio file is loaded
+  if (!sampler) {
+    // Create new sampler with the audio file
+    // Map all MIDI notes to the same sample (one-shot playback)
+    const urls: { [key: string]: string } = {};
+    const noteNames = [
+      'C',
+      'C#',
+      'D',
+      'D#',
+      'E',
+      'F',
+      'F#',
+      'G',
+      'G#',
+      'A',
+      'A#',
+      'B',
+    ];
+
+    // Create mappings for multiple octaves so any MIDI note triggers the sample
+    for (let octave = 0; octave <= 8; octave++) {
+      for (const noteName of noteNames) {
+        urls[`${noteName}${octave}`] = audioUrl;
+      }
+    }
+
+    sampler = new Tone.Sampler(urls, {
+      onload: () => {
+        console.log(`✓ Sample loaded for track ${trackId}`);
+      },
+      onerror: (err) => {
+        console.error(`✗ Failed to load sample for track ${trackId}:`, err);
+      },
+    }).toDestination();
+
+    samplerMap.set(trackId, sampler);
+  }
+
+  return sampler;
+}
+
+/**
+ * Updates all MIDI parts for a track with multiple clips
+ * Supports both synth and sampler playback
+ */
+export async function updateMidiParts(
+  trackId: string,
+  clips: MidiClipData[] | null | undefined,
+  samplerAudioUrl?: string | null // Optional: if provided, use sampler instead of synth
 ) {
   // Remove existing parts if they exist
   const existingParts = midiPartMap.get(trackId);
@@ -119,7 +193,14 @@ export function updateMidiParts(
     return;
   }
 
-  const synth = getSynthForTrack(trackId);
+  // Determine if we should use sampler or synth
+  let instrument: Tone.PolySynth | Tone.Sampler;
+  if (samplerAudioUrl) {
+    instrument = await getSamplerForTrack(trackId, samplerAudioUrl);
+  } else {
+    instrument = getSynthForTrack(trackId);
+  }
+
   const parts: Tone.Part[] = [];
 
   // Create a part for each clip
@@ -137,12 +218,23 @@ export function updateMidiParts(
 
     // Create a Part for this clip
     const part = new Tone.Part((time, value) => {
-      synth.triggerAttackRelease(
-        value.note,
-        value.duration,
-        time,
-        value.velocity
-      );
+      if (instrument instanceof Tone.Sampler) {
+        // For samplers, trigger the sample
+        (instrument as Tone.Sampler).triggerAttackRelease(
+          value.note,
+          value.duration,
+          time,
+          value.velocity
+        );
+      } else {
+        // For synths, trigger the note
+        (instrument as Tone.PolySynth).triggerAttackRelease(
+          value.note,
+          value.duration,
+          time,
+          value.velocity
+        );
+      }
     }, events);
 
     // DON'T loop the part - let the transport loop handle it
@@ -176,7 +268,7 @@ export function updateMidiPart(trackId: string, clipData: MidiClipData | null) {
 }
 
 /**
- * Removes a track's MIDI parts and synth
+ * Removes a track's MIDI parts, synth, and sampler
  */
 export function removeMidiTrack(trackId: string) {
   const parts = midiPartMap.get(trackId);
@@ -193,15 +285,26 @@ export function removeMidiTrack(trackId: string) {
     synth.dispose();
     synthMap.delete(trackId);
   }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    sampler.dispose();
+    samplerMap.delete(trackId);
+  }
 }
 
 /**
- * Mutes or unmutes a track's synth
+ * Mutes or unmutes a track's synth or sampler
  */
 export function setTrackMute(trackId: string, muted: boolean) {
   const synth = synthMap.get(trackId);
   if (synth) {
     synth.volume.value = muted ? -Infinity : 0;
+  }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    sampler.volume.value = muted ? -Infinity : 0;
   }
 }
 

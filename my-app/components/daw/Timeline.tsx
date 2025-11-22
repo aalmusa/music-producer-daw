@@ -37,8 +37,8 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
           clip.id === clipId ? clipData : clip
         );
 
-        // Update the audio engine with ALL clips for this track
-        updateMidiParts(trackId, updatedClips);
+        // Update the audio engine with ALL clips for this track, preserving sampler
+        updateMidiParts(trackId, updatedClips, track.samplerAudioUrl);
 
         return { ...track, midiClips: updatedClips };
       })
@@ -59,8 +59,8 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
           clip.id === clipId ? { ...clip, startBar: newStartBar } : clip
         );
 
-        // Update the audio engine with repositioned clips
-        updateMidiParts(trackId, updatedClips);
+        // Update the audio engine with repositioned clips, preserving sampler
+        updateMidiParts(trackId, updatedClips, track.samplerAudioUrl ?? undefined);
 
         return { ...track, midiClips: updatedClips };
       })
@@ -78,8 +78,8 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
         const existingClips = track.midiClips || [];
         const updatedClips = [...existingClips, newClip];
 
-        // Update audio engine
-        updateMidiParts(track.id, updatedClips);
+        // Update audio engine, preserving sampler
+        updateMidiParts(track.id, updatedClips, track.samplerAudioUrl ?? undefined);
 
         return { ...track, midiClips: updatedClips };
       })
@@ -101,8 +101,8 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
           (clip) => clip.id !== clipId
         );
 
-        // Update audio engine
-        updateMidiParts(track.id, updatedClips);
+        // Update audio engine, preserving sampler
+        updateMidiParts(track.id, updatedClips, track.samplerAudioUrl ?? undefined);
 
         return { ...track, midiClips: updatedClips };
       })

@@ -1,13 +1,12 @@
 // components/daw/Mixer.tsx
 
-const dummyMixerChannels = [
-  { id: "1", name: "Drums" },
-  { id: "2", name: "Bass" },
-  { id: "3", name: "Keys" },
-  { id: "4", name: "Master" },
-];
+import { Track } from '@/lib/midiTypes';
 
-export default function Mixer() {
+interface MixerProps {
+  tracks: Track[];
+}
+
+export default function Mixer({ tracks }: MixerProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-8 flex items-center px-3 border-b border-slate-800 text-xs text-slate-400">
@@ -15,9 +14,9 @@ export default function Mixer() {
       </div>
 
       <div className="flex-1 flex gap-4 px-4 py-2 overflow-x-auto">
-        {dummyMixerChannels.map(channel => (
+        {tracks.map(track => (
           <div
-            key={channel.id}
+            key={track.id}
             className="w-20 flex flex-col items-center text-xs text-slate-300"
           >
             <div className="flex-1 flex flex-col items-center justify-end">
@@ -28,7 +27,7 @@ export default function Mixer() {
             </div>
 
             <div className="mt-2 text-[10px] text-center truncate w-full">
-              {channel.name}
+              {track.name}
             </div>
           </div>
         ))}
