@@ -8,6 +8,7 @@ interface MidiClipProps {
   totalBars: number; // Total bars in timeline
   onOpenEditor: () => void;
   onMove: (newStartBar: number) => void;
+  onDelete: () => void;
 }
 
 export default function MidiClip({
@@ -15,6 +16,7 @@ export default function MidiClip({
   totalBars,
   onOpenEditor,
   onMove,
+  onDelete,
 }: MidiClipProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
@@ -86,6 +88,18 @@ export default function MidiClip({
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (window.confirm('Delete this MIDI clip?')) {
+        onDelete();
+      }
+    },
+    [onDelete]
+  );
+
   return (
     <div
       className={`absolute h-12 rounded border-2 transition-all ${
@@ -98,6 +112,7 @@ export default function MidiClip({
         width: `${clipWidthPercent}%`,
       }}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
       <div
         className='clip-content h-full flex flex-col items-center justify-center text-xs text-slate-100 px-2 cursor-pointer'
@@ -106,9 +121,7 @@ export default function MidiClip({
           onOpenEditor();
         }}
       >
-        <div className='font-medium truncate w-full text-center'>
-          MIDI Clip
-        </div>
+        <div className='font-medium truncate w-full text-center'>MIDI Clip</div>
         <div className='text-[10px] text-purple-200 mt-0.5 truncate w-full text-center'>
           {clipData.notes.length} notes • Bar {clipData.startBar + 1}-
           {clipData.startBar + clipData.bars}

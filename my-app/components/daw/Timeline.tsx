@@ -76,7 +76,12 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
         if (track.id !== trackId) return track;
 
         const existingClips = track.midiClips || [];
-        return { ...track, midiClips: [...existingClips, newClip] };
+        const updatedClips = [...existingClips, newClip];
+
+        // Update audio engine
+        updateMidiParts(track.id, updatedClips);
+
+        return { ...track, midiClips: updatedClips };
       })
     );
 
@@ -86,32 +91,52 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
     setPianoRollOpen(true);
   };
 
-  // Find next available 4-bar slot
-  const findNextAvailableSlot = (trackId: string): number => {
+  // Delete MIDI clip
+  const handleDeleteClip = (trackId: string, clipId: string) => {
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trackId) return track;
+
+        const updatedClips = (track.midiClips || []).filter(
+          (clip) => clip.id !== clipId
+        );
+
+        // Update audio engine
+        updateMidiParts(track.id, updatedClips);
+
+        return { ...track, midiClips: updatedClips };
+      })
+    );
+  };
+
+  // Get all empty 4-bar slots for a track
+  const getEmptySlots = (trackId: string): number[] => {
     const track = tracks.find((t) => t.id === trackId);
-    if (!track || !track.midiClips || track.midiClips.length === 0) return 0;
+    const emptySlots: number[] = [];
 
-    // Find all occupied bars
-    const occupiedRanges = track.midiClips.map((clip) => ({
-      start: clip.startBar,
-      end: clip.startBar + clip.bars,
-    }));
+    // Get occupied ranges
+    const occupiedRanges =
+      track?.midiClips?.map((clip) => ({
+        start: clip.startBar,
+        end: clip.startBar + clip.bars,
+      })) || [];
 
-    // Check 4-bar slots
+    // Check each 4-bar slot
     for (let bar = 0; bar < measureCount; bar += 4) {
       const slotEnd = bar + 4;
       const isOccupied = occupiedRanges.some(
         (range) =>
           (bar >= range.start && bar < range.end) ||
-          (slotEnd > range.start && slotEnd <= range.end)
+          (slotEnd > range.start && slotEnd <= range.end) ||
+          (bar < range.start && slotEnd > range.start)
       );
 
       if (!isOccupied && slotEnd <= measureCount) {
-        return bar;
+        emptySlots.push(bar);
       }
     }
 
-    return 0; // Default to start if no slots available
+    return emptySlots;
   };
 
   // Open piano roll for a clip
@@ -229,6 +254,38 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                 </div>
               ) : track.type === 'midi' ? (
                 <>
+                  {/* Render empty slot buttons */}
+                  {getEmptySlots(track.id).map((startBar) => {
+                    const slotLeftPercent = (startBar / measureCount) * 100;
+                    const slotWidthPercent = (4 / measureCount) * 100;
+
+                    return (
+                      <button
+                        key={`empty-${startBar}`}
+                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-slate-600/70 flex items-center justify-center text-slate-600 hover:text-slate-400 transition-all cursor-pointer group'
+                        style={{
+                          left: `${slotLeftPercent}%`,
+                          width: `${slotWidthPercent}%`,
+                        }}
+                        onClick={() => handleAddClip(track.id, startBar)}
+                      >
+                        <svg
+                          className='w-6 h-6 opacity-50 group-hover:opacity-100 transition-opacity'
+                          fill='none'
+                          stroke='currentColor'
+                          viewBox='0 0 24 24'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M12 4v16m8-8H4'
+                          />
+                        </svg>
+                      </button>
+                    );
+                  })}
+
                   {/* Render all MIDI clips */}
                   {track.midiClips?.map((clip) => (
                     <MidiClip
@@ -241,30 +298,11 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                       onMove={(newStartBar) =>
                         handleMoveClip(track.id, clip.id, newStartBar)
                       }
+                      onDelete={() => handleDeleteClip(track.id, clip.id)}
                     />
                   ))}
-
-                  {/* Add clip button - shows when track is empty or in available space */}
-                  <button
-                    className='absolute left-2 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded bg-slate-700/60 border border-slate-600/40 text-xs text-slate-400 hover:bg-slate-700 hover:border-slate-600 hover:text-slate-300 transition-all z-10'
-                    onClick={() => {
-                      const nextSlot = findNextAvailableSlot(track.id);
-                      handleAddClip(track.id, nextSlot);
-                    }}
-                  >
-                    + Add Clip
-                  </button>
                 </>
-              ) : (
-                <div className='px-2'>
-                  <button
-                    className='h-12 w-48 rounded bg-slate-700/60 border border-slate-600/40 text-xs flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:border-slate-600 hover:text-slate-300 transition-all cursor-pointer'
-                    onClick={() => handleAddClip(track.id, 0)}
-                  >
-                    + Add MIDI Clip
-                  </button>
-                </div>
-              )}
+              ) : null}
             </div>
 
             {/* Resize handle at the bottom edge of the track row */}
