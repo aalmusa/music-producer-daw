@@ -34,7 +34,22 @@ export default function PianoRollModal({
     pitch: number;
     start: number;
   } | null>(null);
+  const [chatMessages, setChatMessages] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([
+    {
+      role: 'assistant',
+      content:
+        'Hi! I can help you with MIDI editing. Try asking me to create melodies, harmonies, or modify existing notes!',
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const timeRulerScrollRef = useRef<HTMLDivElement>(null);
+  const pianoKeysRef = useRef<HTMLDivElement>(null);
 
   // Get grid position from mouse event
   const getGridPosition = useCallback(
@@ -195,6 +210,25 @@ export default function PianoRollModal({
     [handleDeleteNote]
   );
 
+  // Sync scrolling between grid, time ruler, and piano keys
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    const timeRulerScroll = timeRulerScrollRef.current;
+    const pianoKeys = pianoKeysRef.current;
+
+    if (!scrollContainer || !timeRulerScroll || !pianoKeys) return;
+
+    const handleScroll = () => {
+      // Sync horizontal scroll of time ruler with grid
+      timeRulerScroll.scrollLeft = scrollContainer.scrollLeft;
+      // Sync vertical scroll of piano keys with grid
+      pianoKeys.scrollTop = scrollContainer.scrollTop;
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll);
+    return () => scrollContainer.removeEventListener('scroll', handleScroll);
+  }, []);
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -221,6 +255,64 @@ export default function PianoRollModal({
       onUpdateClip({ ...clipData, notes: [] });
     }
   };
+
+  // Handle chat submission
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isProcessing) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput('');
+    setChatMessages((prev) => [
+      ...prev,
+      { role: 'user', content: userMessage },
+    ]);
+    setIsProcessing(true);
+
+    try {
+      // Call the assistant API
+      const response = await fetch('/api/assistant-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          clipData,
+          trackId,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to get response');
+
+      const data = await response.json();
+
+      // Add assistant response
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: data.message },
+      ]);
+
+      // Update clip if notes were modified
+      if (data.clipData) {
+        onUpdateClip(data.clipData);
+      }
+    } catch (error) {
+      console.error('Chat error:', error);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please try again.',
+        },
+      ]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   if (!isOpen) return null;
 
@@ -290,180 +382,308 @@ export default function PianoRollModal({
 
         {/* Piano Roll Content */}
         <div className='flex-1 flex overflow-hidden'>
-          {/* Piano keys sidebar */}
-          <div className='w-20 border-r border-slate-800 bg-slate-950 flex flex-col overflow-hidden'>
-            <div className='h-12 border-b border-slate-800 flex items-center justify-center text-[10px] text-slate-500'>
-              NOTE
-            </div>
-            <div className='flex-1 flex flex-col overflow-y-auto'>
-              {Array.from({ length: PIANO_KEYS }).map((_, i) => {
-                const pitch = LOWEST_NOTE + (PIANO_KEYS - 1 - i);
-                const noteName = noteNumberToName(pitch);
-                const isBlackKey = noteName.includes('#');
-                const isC = noteName.startsWith('C') && !noteName.includes('#');
+          {/* Left side - Piano Roll Editor */}
+          <div className='flex-1 flex flex-col overflow-hidden border-r border-slate-800'>
+            {/* Fixed header row */}
+            <div className='flex border-b border-slate-800 bg-slate-950 shrink-0'>
+              {/* NOTE label - fixed */}
+              <div className='w-20 h-12 border-r border-slate-800 flex items-center justify-center text-[10px] text-slate-500 shrink-0'>
+                NOTE
+              </div>
 
-                return (
-                  <div
-                    key={i}
-                    className={`shrink-0 border-b flex items-center justify-end px-2 text-[11px] font-mono ${
-                      isBlackKey
-                        ? 'bg-slate-900 text-slate-500 border-slate-800'
-                        : 'bg-slate-950 text-slate-300 border-slate-800'
-                    } ${isC ? 'border-l-2 border-l-emerald-500' : ''}`}
-                    style={{ height: '24px' }}
-                    onClick={() => previewNote(trackId, pitch, 0.3, 0.8)}
-                    role='button'
-                  >
-                    {noteName}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Grid area */}
-          <div className='flex-1 flex flex-col overflow-hidden'>
-            {/* Time ruler */}
-            <div className='h-12 border-b border-slate-800 bg-slate-950 flex'>
-              {Array.from({ length: clipData.bars * 4 }).map((_, i) => {
-                const bar = Math.floor(i / 4);
-                const beat = (i % 4) + 1;
-                const isBarStart = beat === 1;
-
-                return (
-                  <div
-                    key={i}
-                    className={`flex-1 border-r flex items-center justify-center text-[10px] ${
-                      isBarStart
-                        ? 'border-slate-600 text-slate-300 font-semibold'
-                        : 'border-slate-800 text-slate-500'
-                    }`}
-                  >
-                    {isBarStart ? `${bar + 1}` : beat}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Scrollable grid */}
-            <div className='flex-1 overflow-auto relative bg-slate-900'>
-              <div
-                ref={gridRef}
-                className='relative cursor-crosshair select-none'
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={() => {
-                  if (isDrawing) {
-                    setIsDrawing(false);
-                    setDrawStart(null);
-                  }
-                }}
-                style={{
-                  height: `${PIANO_KEYS * 24}px`,
-                  minWidth: '100%',
-                }}
-              >
-                {/* Grid background */}
+              {/* Time ruler - scrolls horizontally, stays at top */}
+              <div className='flex-1 h-12 overflow-hidden relative'>
                 <div
-                  className='absolute inset-0 grid'
+                  ref={timeRulerScrollRef}
+                  className='h-12 overflow-x-auto overflow-y-hidden'
                   style={{
-                    gridTemplateColumns: `repeat(${
-                      clipData.bars * GRID_DIVISIONS
-                    }, 1fr)`,
-                    gridTemplateRows: `repeat(${PIANO_KEYS}, 24px)`,
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
                   }}
                 >
-                  {Array.from({
-                    length: PIANO_KEYS * clipData.bars * GRID_DIVISIONS,
-                  }).map((_, i) => {
-                    const col = i % (clipData.bars * GRID_DIVISIONS);
-                    const row = Math.floor(
-                      i / (clipData.bars * GRID_DIVISIONS)
-                    );
-                    const isBarLine = col % GRID_DIVISIONS === 0;
-                    const isBeatLine = col % 4 === 0;
-                    const pitch = LOWEST_NOTE + (PIANO_KEYS - 1 - row);
-                    const isBlackKey = noteNumberToName(pitch).includes('#');
+                  <div className='flex h-full w-full'>
+                    {Array.from({ length: clipData.bars * 4 }).map((_, i) => {
+                      const bar = Math.floor(i / 4);
+                      const beat = (i % 4) + 1;
+                      const isBarStart = beat === 1;
+
+                      return (
+                        <div
+                          key={i}
+                          className={`border-r flex items-center justify-center text-[10px] ${
+                            isBarStart
+                              ? 'border-slate-600 text-slate-300 font-semibold'
+                              : 'border-slate-800 text-slate-500'
+                          }`}
+                          style={{
+                            minWidth: '40px',
+                            flex: `1 0 ${100 / (clipData.bars * 4)}%`,
+                          }}
+                        >
+                          {isBarStart ? `${bar + 1}` : beat}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Hide scrollbar with overlay */}
+                <style jsx>{`
+                  div::-webkit-scrollbar {
+                    display: none;
+                  }
+                `}</style>
+              </div>
+            </div>
+
+            {/* Scrollable content area */}
+            <div className='flex-1 flex overflow-hidden relative'>
+              {/* Piano keys - scrolls vertically only */}
+              <div
+                ref={pianoKeysRef}
+                className='w-20 border-r border-slate-800 bg-slate-950 shrink-0 overflow-hidden'
+              >
+                <div style={{ height: `${PIANO_KEYS * 24}px` }}>
+                  {Array.from({ length: PIANO_KEYS }).map((_, i) => {
+                    const pitch = LOWEST_NOTE + (PIANO_KEYS - 1 - i);
+                    const noteName = noteNumberToName(pitch);
+                    const isBlackKey = noteName.includes('#');
                     const isC =
-                      noteNumberToName(pitch).startsWith('C') &&
-                      !noteNumberToName(pitch).includes('#');
+                      noteName.startsWith('C') && !noteName.includes('#');
 
                     return (
                       <div
                         key={i}
-                        className={`border-r border-b ${
-                          isBarLine
-                            ? 'border-slate-600'
-                            : isBeatLine
-                            ? 'border-slate-700'
-                            : 'border-slate-800'
-                        } ${
+                        className={`border-b flex items-center justify-end px-2 text-[11px] font-mono ${
                           isBlackKey
-                            ? 'bg-slate-900/50'
-                            : isC
-                            ? 'bg-slate-900/30'
-                            : 'bg-slate-900/20'
-                        }`}
-                      />
+                            ? 'bg-slate-900 text-slate-500 border-slate-800'
+                            : 'bg-slate-950 text-slate-300 border-slate-800'
+                        } ${isC ? 'border-l-2 border-l-emerald-500' : ''}`}
+                        style={{ height: '24px' }}
+                        onClick={() => previewNote(trackId, pitch, 0.3, 0.8)}
+                        role='button'
+                      >
+                        {noteName}
+                      </div>
                     );
                   })}
                 </div>
+              </div>
 
-                {/* Notes */}
-                {clipData.notes.map((note) => {
-                  const x = (note.start / clipData.bars) * 100;
-                  const width = (note.duration / clipData.bars) * 100;
-                  const y = (PIANO_KEYS - 1 - (note.pitch - LOWEST_NOTE)) * 24;
-                  const height = 24;
+              {/* Grid - scrolls both horizontally and vertically */}
+              <div ref={scrollContainerRef} className='flex-1 overflow-auto'>
+                <div
+                  ref={gridRef}
+                  className='relative cursor-crosshair select-none'
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={() => {
+                    if (isDrawing) {
+                      setIsDrawing(false);
+                      setDrawStart(null);
+                    }
+                  }}
+                  style={{
+                    height: `${PIANO_KEYS * 24}px`,
+                    minWidth: '100%',
+                    width: '100%',
+                  }}
+                >
+                  {/* Grid background */}
+                  <div
+                    className='absolute inset-0 grid'
+                    style={{
+                      gridTemplateColumns: `repeat(${
+                        clipData.bars * GRID_DIVISIONS
+                      }, 1fr)`,
+                      gridTemplateRows: `repeat(${PIANO_KEYS}, 24px)`,
+                    }}
+                  >
+                    {Array.from({
+                      length: PIANO_KEYS * clipData.bars * GRID_DIVISIONS,
+                    }).map((_, i) => {
+                      const col = i % (clipData.bars * GRID_DIVISIONS);
+                      const row = Math.floor(
+                        i / (clipData.bars * GRID_DIVISIONS)
+                      );
+                      const isBarLine = col % GRID_DIVISIONS === 0;
+                      const isBeatLine = col % 4 === 0;
+                      const pitch = LOWEST_NOTE + (PIANO_KEYS - 1 - row);
+                      const isBlackKey = noteNumberToName(pitch).includes('#');
+                      const isC =
+                        noteNumberToName(pitch).startsWith('C') &&
+                        !noteNumberToName(pitch).includes('#');
 
-                  const noteName = noteNumberToName(note.pitch);
-                  const isSelected = selectedNoteId === note.id;
-
-                  return (
-                    <div
-                      key={note.id}
-                      className={`absolute rounded-sm border-2 transition-colors cursor-move group ${
-                        isSelected
-                          ? 'bg-yellow-500 border-yellow-400 z-20'
-                          : 'bg-emerald-500 border-emerald-400 hover:bg-emerald-400 z-10'
-                      }`}
-                      style={{
-                        left: `${x}%`,
-                        top: `${y}px`,
-                        width: `${width}%`,
-                        height: `${height}px`,
-                        opacity: isSelected ? 1 : note.velocity,
-                      }}
-                      onMouseEnter={() => handleNoteHover(note)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedNoteId(note.id);
-                      }}
-                      onContextMenu={(e) => handleNoteRightClick(e, note.id)}
-                    >
-                      {/* Note label - shows on hover or when selected */}
-                      <div className='absolute inset-0 flex items-center justify-between px-1'>
-                        <span
-                          className={`text-[9px] font-semibold text-slate-900 truncate transition-opacity ${
-                            isSelected
-                              ? 'opacity-100'
-                              : 'opacity-0 group-hover:opacity-100'
+                      return (
+                        <div
+                          key={i}
+                          className={`border-r border-b ${
+                            isBarLine
+                              ? 'border-slate-600'
+                              : isBeatLine
+                              ? 'border-slate-700'
+                              : 'border-slate-800'
+                          } ${
+                            isBlackKey
+                              ? 'bg-slate-900/50'
+                              : isC
+                              ? 'bg-slate-900/30'
+                              : 'bg-slate-900/20'
                           }`}
-                        >
-                          {noteName}
-                        </span>
-                        {isSelected && (
-                          <span className='text-[8px] text-slate-800 opacity-75'>
-                            {note.duration.toFixed(2)}b
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* Notes */}
+                  {clipData.notes.map((note) => {
+                    const x = (note.start / clipData.bars) * 100;
+                    const width = (note.duration / clipData.bars) * 100;
+                    const y =
+                      (PIANO_KEYS - 1 - (note.pitch - LOWEST_NOTE)) * 24;
+                    const height = 24;
+
+                    const noteName = noteNumberToName(note.pitch);
+                    const isSelected = selectedNoteId === note.id;
+
+                    return (
+                      <div
+                        key={note.id}
+                        className={`absolute rounded-sm border-2 transition-colors cursor-move group ${
+                          isSelected
+                            ? 'bg-yellow-500 border-yellow-400 z-20'
+                            : 'bg-emerald-500 border-emerald-400 hover:bg-emerald-400 z-10'
+                        }`}
+                        style={{
+                          left: `${x}%`,
+                          top: `${y}px`,
+                          width: `${width}%`,
+                          height: `${height}px`,
+                          opacity: isSelected ? 1 : note.velocity,
+                        }}
+                        onMouseEnter={() => handleNoteHover(note)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedNoteId(note.id);
+                        }}
+                        onContextMenu={(e) => handleNoteRightClick(e, note.id)}
+                      >
+                        {/* Note label - shows on hover or when selected */}
+                        <div className='absolute inset-0 flex items-center justify-between px-1'>
+                          <span
+                            className={`text-[9px] font-semibold text-slate-900 truncate transition-opacity ${
+                              isSelected
+                                ? 'opacity-100'
+                                : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            {noteName}
                           </span>
-                        )}
+                          {isSelected && (
+                            <span className='text-[8px] text-slate-800 opacity-75'>
+                              {note.duration.toFixed(2)}b
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Right side - AI Chatbot */}
+          <div className='w-96 flex flex-col bg-slate-900/30'>
+            {/* Chat header */}
+            <div className='px-4 py-3 border-b border-slate-800 bg-slate-950'>
+              <div className='flex items-center gap-2'>
+                <div className='w-2 h-2 rounded-full bg-emerald-500 animate-pulse' />
+                <h3 className='text-sm font-semibold text-slate-100'>
+                  AI Assistant
+                </h3>
+              </div>
+              <p className='text-[10px] text-slate-500 mt-1'>
+                Ask me to create melodies, harmonies, or edit notes
+              </p>
+            </div>
+
+            {/* Chat messages */}
+            <div className='flex-1 overflow-y-auto p-4 space-y-3'>
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${
+                    msg.role === 'user' ? 'justify-end' : 'justify-start'
+                  }`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                      msg.role === 'user'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-800 text-slate-200'
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {isProcessing && (
+                <div className='flex justify-start'>
+                  <div className='bg-slate-800 text-slate-400 rounded-lg px-3 py-2 text-sm'>
+                    <div className='flex items-center gap-2'>
+                      <div className='flex gap-1'>
+                        <div
+                          className='w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce'
+                          style={{ animationDelay: '0ms' }}
+                        />
+                        <div
+                          className='w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce'
+                          style={{ animationDelay: '150ms' }}
+                        />
+                        <div
+                          className='w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce'
+                          style={{ animationDelay: '300ms' }}
+                        />
+                      </div>
+                      <span>Thinking...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat input */}
+            <form
+              onSubmit={handleChatSubmit}
+              className='p-4 border-t border-slate-800'
+            >
+              <div className='flex gap-2'>
+                <input
+                  type='text'
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder='Ask AI to help with MIDI...'
+                  className='flex-1 bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500'
+                  disabled={isProcessing}
+                />
+                <button
+                  type='submit'
+                  disabled={isProcessing || !chatInput.trim()}
+                  className='px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-sm font-medium transition-colors'
+                >
+                  Send
+                </button>
+              </div>
+              <div className='flex items-center gap-2 mt-2 text-[10px] text-slate-500'>
+                <span>💡</span>
+                <span>
+                  Try: &quot;Create a C major scale&quot; or &quot;Add
+                  harmony&quot;
+                </span>
+              </div>
+            </form>
           </div>
         </div>
 
