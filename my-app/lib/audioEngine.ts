@@ -57,15 +57,15 @@ export function getTransportPosition(): string {
 
 export function toggleMetronome(): boolean {
   if (!metronomeLoop) return false;
-  
+
   metronomeEnabled = !metronomeEnabled;
-  
+
   if (metronomeEnabled) {
     metronomeLoop.start(0);
   } else {
     metronomeLoop.stop();
   }
-  
+
   return metronomeEnabled;
 }
 
@@ -120,51 +120,37 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
 /**
  * Creates or retrieves a sampler for a track
  * Samplers play audio files triggered by MIDI notes
+ * The sample is pitched based on the MIDI note, with C3 as the root pitch
  */
 export async function getSamplerForTrack(
   trackId: string,
   audioUrl: string
 ): Promise<Tone.Sampler> {
-  let sampler = samplerMap.get(trackId);
+  const existingSampler = samplerMap.get(trackId);
 
-  // Always create new sampler to ensure correct audio file is loaded
-  if (!sampler) {
-    // Create new sampler with the audio file
-    // Map all MIDI notes to the same sample (one-shot playback)
-    const urls: { [key: string]: string } = {};
-    const noteNames = [
-      'C',
-      'C#',
-      'D',
-      'D#',
-      'E',
-      'F',
-      'F#',
-      'G',
-      'G#',
-      'A',
-      'A#',
-      'B',
-    ];
+  // Dispose of the existing sampler if the audio URL has changed
+  if (existingSampler) {
+    existingSampler.dispose();
+    samplerMap.delete(trackId);
+  }
 
-    // Create mappings for multiple octaves so any MIDI note triggers the sample
-    for (let octave = 0; octave <= 8; octave++) {
-      for (const noteName of noteNames) {
-        urls[`${noteName}${octave}`] = audioUrl;
-      }
-    }
-
-    sampler = new Tone.Sampler(urls, {
+  // Create new sampler with C3 as the root note
+  // Tone.js will automatically pitch-shift the sample for other notes
+  const sampler = new Tone.Sampler(
+    {
+      C3: audioUrl, // Map the sample to C3 (MIDI note 60)
+    },
+    {
       onload: () => {
-        console.log(`✓ Sample loaded for track ${trackId}`);
+        console.log(`✓ Sample loaded for track ${trackId} (root: C3)`);
       },
       onerror: (err) => {
         console.error(`✗ Failed to load sample for track ${trackId}:`, err);
       },
-    }).toDestination();
+    }
+  ).toDestination();
 
-    samplerMap.set(trackId, sampler);
-  }
+  samplerMap.set(trackId, sampler);
 
   return sampler;
 }
@@ -182,7 +168,8 @@ export async function updateMidiParts(
   const existingParts = midiPartMap.get(trackId);
   if (existingParts) {
     existingParts.forEach((part) => {
-      part.stop();
+      // Cancel the part to avoid timing issues, then dispose
+      part.cancel();
       part.dispose();
     });
     midiPartMap.delete(trackId);
@@ -300,7 +287,7 @@ export function removeMidiTrack(trackId: string) {
   const parts = midiPartMap.get(trackId);
   if (parts) {
     parts.forEach((part) => {
-      part.stop();
+      part.cancel();
       part.dispose();
     });
     midiPartMap.delete(trackId);
