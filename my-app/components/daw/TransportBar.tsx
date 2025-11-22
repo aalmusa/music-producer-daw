@@ -1,5 +1,59 @@
-// components/daw/TransportBar.tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  initAudio,
+  startTransport,
+  stopTransport,
+  setBpm,
+  getTransportPosition,
+} from "@/lib/audioEngine";
+
 export default function TransportBar() {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [bpm, setBpmState] = useState(120);
+  const [position, setPosition] = useState("0.0.0");
+
+  // Update position while playing
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+
+    let frameId: number;
+
+    const update = () => {
+      const pos = getTransportPosition();
+      // Keep only bars.beats.sixteenths
+      const parts = pos.split(".");
+      const formatted = parts.slice(0, 3).join(".");
+      setPosition(formatted);
+      frameId = requestAnimationFrame(update);
+    };
+
+    update();
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [isPlaying]);
+
+  const handlePlay = async () => {
+    await initAudio();
+    startTransport();
+    setIsPlaying(true);
+  };
+
+  const handleStop = () => {
+    stopTransport();
+    setIsPlaying(false);
+  };
+
+  const handleBpmChange = (value: number) => {
+    setBpmState(value);
+    setBpm(value);
+  };
+
   return (
     <div className="flex items-center gap-4 w-full">
       {/* Left side: logo or title */}
@@ -9,11 +63,11 @@ export default function TransportBar() {
 
       {/* Transport buttons */}
       <div className="flex items-center gap-2">
-        <button className="px-3 py-1 rounded bg-green-500 text-slate-900 text-sm">
-          Play
-        </button>
-        <button className="px-3 py-1 rounded bg-red-500 text-slate-900 text-sm">
-          Stop
+        <button
+          className="px-3 py-1 rounded bg-green-500 text-slate-900 text-sm"
+          onClick={isPlaying ? handleStop : handlePlay}
+        >
+          {isPlaying ? "Stop" : "Play"}
         </button>
       </div>
 
@@ -21,7 +75,7 @@ export default function TransportBar() {
       <div className="ml-4 flex items-center gap-2 text-xs">
         <span className="text-slate-400">Position</span>
         <span className="px-2 py-1 rounded bg-slate-800 font-mono text-slate-100">
-          1.1.0
+          {position}
         </span>
       </div>
 
@@ -30,7 +84,8 @@ export default function TransportBar() {
         <span className="text-slate-400">BPM</span>
         <input
           type="number"
-          defaultValue={120}
+          value={bpm}
+          onChange={(e) => handleBpmChange(Number(e.target.value))}
           className="w-16 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 text-xs"
         />
       </div>
