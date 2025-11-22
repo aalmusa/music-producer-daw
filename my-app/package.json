@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@langchain/core": "^1.0.6",
+    "@langchain/google-genai": "^1.0.3",
+    "langchain": "^1.0.6",
     "next": "16.0.3",
     "react": "19.2.0",
     "react-dom": "19.2.0"
