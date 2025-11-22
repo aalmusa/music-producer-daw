@@ -1,7 +1,10 @@
 // lib/audioEngine.ts
 import * as Tone from "tone";
 
-// Tone.js v15+ recommends getTransport() instead of Tone.Transport
+// Shared musical settings
+export const LOOP_BARS = 16; // same as the number of measures in Timeline
+
+// Tone.js v15+ style transport
 const transport = Tone.getTransport();
 
 let isInitialized = false;
@@ -15,7 +18,7 @@ export async function initAudio() {
     transport.bpm.value = 120;
     transport.loop = true;
     transport.loopStart = 0;
-    transport.loopEnd = "4m";
+    transport.loopEnd = `${LOOP_BARS}m`;
 
     metronomeSynth = new Tone.MembraneSynth().toDestination();
 
@@ -42,6 +45,21 @@ export function setBpm(bpm: number) {
 }
 
 export function getTransportPosition(): string {
-  // Convert to bars.beats.sixteenths
   return transport.position.toString();
+}
+
+// Progress from 0 to 1 across the loop
+export function getLoopProgress(): number {
+  const parts = transport.position.toString().split(".");
+  const bars = parseInt(parts[0] ?? "0", 10);
+  const beats = parseInt(parts[1] ?? "0", 10);
+  const six = parseInt(parts[2] ?? "0", 10);
+
+  const beatsPerBar = 4;
+  const totalBeats = bars * beatsPerBar + beats + six / 4;
+  const loopBeats = LOOP_BARS * beatsPerBar;
+
+  if (!loopBeats) return 0;
+
+  return (totalBeats % loopBeats) / loopBeats;
 }

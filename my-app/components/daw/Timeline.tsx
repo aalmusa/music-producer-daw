@@ -1,10 +1,32 @@
-// components/daw/Timeline.tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { LOOP_BARS, getLoopProgress } from "@/lib/audioEngine";
 
 const TRACK_ROW_HEIGHT = 64;
 
 export default function Timeline() {
   const tracks = ["Drums", "Bass", "Keys"];
-  const measureCount = 16;
+  const measureCount = LOOP_BARS;
+
+  const [playheadProgress, setPlayheadProgress] = useState(0);
+
+  // Continuously read loop progress from Tone and update playhead
+  useEffect(() => {
+    let frameId: number;
+
+    const update = () => {
+      const p = getLoopProgress();
+      setPlayheadProgress(p);
+      frameId = requestAnimationFrame(update);
+    };
+
+    update();
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
 
   return (
     <div className="h-full w-full relative">
@@ -22,7 +44,7 @@ export default function Timeline() {
 
       {/* Track lanes */}
       <div>
-        {tracks.map((trackName, rowIndex) => (
+        {tracks.map((trackName) => (
           <div
             key={trackName}
             className="relative border-b border-slate-800"
@@ -50,8 +72,11 @@ export default function Timeline() {
         ))}
       </div>
 
-      {/* Playhead placeholder */}
-      <div className="pointer-events-none absolute top-10 bottom-0 w-px bg-emerald-400 left-32" />
+      {/* Playhead line */}
+      <div
+        className="pointer-events-none absolute top-10 bottom-0 w-px bg-emerald-400"
+        style={{ left: `${playheadProgress * 100}%` }}
+      />
     </div>
   );
 }
