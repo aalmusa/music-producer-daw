@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import * as Tone from "tone";
 
 type WaveformTrackProps = {
   fileUrl: string;
@@ -13,6 +14,7 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Create wavesurfer, load file
   useEffect(() => {
     let isCancelled = false;
 
@@ -28,7 +30,7 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
         cursorColor: "#e5e7eb", // gray-200
         height: 48,
         barWidth: 2,
-        barGap: 1
+        barGap: 1,
       });
 
       wavesurferRef.current = ws;
@@ -57,6 +59,44 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
     };
   }, [fileUrl]);
 
+  // Hook wavesurfer to Tone transport, so global Play and Stop control this clip
+  useEffect(() => {
+    if (!isReady || !wavesurferRef.current) return;
+
+    const transport = Tone.getTransport();
+    let frameId: number;
+    let lastState = transport.state;
+
+    const loop = () => {
+      const state = transport.state;
+
+      if (state !== lastState) {
+        if (state === "started") {
+          // When the global transport starts, restart this clip from the beginning
+          wavesurferRef.current.stop();
+          wavesurferRef.current.seekTo(0);
+          wavesurferRef.current.play();
+          setIsPlaying(true);
+        } else {
+          // On stop or pause, stop this clip
+          wavesurferRef.current.stop();
+          setIsPlaying(false);
+        }
+
+        lastState = state;
+      }
+
+      frameId = requestAnimationFrame(loop);
+    };
+
+    loop();
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [isReady]);
+
+  // Local preview controls for this track only
   const handleTogglePlay = () => {
     if (!wavesurferRef.current || !isReady) return;
     wavesurferRef.current.playPause();
