@@ -126,28 +126,31 @@ export async function getSamplerForTrack(
   trackId: string,
   audioUrl: string
 ): Promise<Tone.Sampler> {
-  let sampler = samplerMap.get(trackId);
+  const existingSampler = samplerMap.get(trackId);
 
-  // Always create new sampler to ensure correct audio file is loaded
-  if (!sampler) {
-    // Create new sampler with C3 as the root note
-    // Tone.js will automatically pitch-shift the sample for other notes
-    sampler = new Tone.Sampler(
-      {
-        C3: audioUrl, // Map the sample to C3 (MIDI note 60)
-      },
-      {
-        onload: () => {
-          console.log(`✓ Sample loaded for track ${trackId} (root: C3)`);
-        },
-        onerror: (err) => {
-          console.error(`✗ Failed to load sample for track ${trackId}:`, err);
-        },
-      }
-    ).toDestination();
-
-    samplerMap.set(trackId, sampler);
+  // Dispose of the existing sampler if the audio URL has changed
+  if (existingSampler) {
+    existingSampler.dispose();
+    samplerMap.delete(trackId);
   }
+
+  // Create new sampler with C3 as the root note
+  // Tone.js will automatically pitch-shift the sample for other notes
+  const sampler = new Tone.Sampler(
+    {
+      C3: audioUrl, // Map the sample to C3 (MIDI note 60)
+    },
+    {
+      onload: () => {
+        console.log(`✓ Sample loaded for track ${trackId} (root: C3)`);
+      },
+      onerror: (err) => {
+        console.error(`✗ Failed to load sample for track ${trackId}:`, err);
+      },
+    }
+  ).toDestination();
+
+  samplerMap.set(trackId, sampler);
 
   return sampler;
 }
