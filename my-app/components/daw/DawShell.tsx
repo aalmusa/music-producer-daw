@@ -1,22 +1,31 @@
 'use client';
 
-import { setTrackMute, updateMidiPart } from '@/lib/audioEngine';
+import { removeMidiTrack, setTrackMute, updateMidiPart } from '@/lib/audioEngine';
+import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
   createDemoMidiClip,
   createEmptyMidiClip,
 } from '@/lib/midiTypes';
 import { useCallback, useEffect, useState } from 'react';
+import AudioFilePicker from './AudioFilePicker';
 import Mixer from './Mixer';
 import RightSidebar from './RightSideBar';
 import Timeline from './Timeline';
 import TrackList from './TrackList';
 import TransportBar from './TransportBar';
+import TrackTypeDialog from './TrackTypeDialog';
 
 export default function DawShell() {
   // Right sidebar width in pixels, resizable by user
   const [rightWidth, setRightWidth] = useState(320);
   const [isResizingRight, setIsResizingRight] = useState(false);
+
+  // Track type selection dialog state
+  const [isTrackDialogOpen, setIsTrackDialogOpen] = useState(false);
+
+  // Audio file picker state
+  const [isAudioPickerOpen, setIsAudioPickerOpen] = useState(false);
 
   // Track data with MIDI support
   const [tracks, setTracks] = useState<Track[]>([
@@ -85,6 +94,118 @@ export default function DawShell() {
     );
   }, []);
 
+  // Color palette for tracks
+  const trackColors = [
+    'bg-emerald-500',
+    'bg-blue-500',
+    'bg-purple-500',
+    'bg-pink-500',
+    'bg-yellow-500',
+    'bg-red-500',
+    'bg-cyan-500',
+    'bg-indigo-500',
+  ];
+
+  /**
+   * Creates a new track with the specified type.
+   * This function can be called by users via dialog or by AI agents programmatically.
+   */
+  const createTrackOfType = useCallback(
+    (trackType: 'midi' | 'audio') => {
+      const trackNumber = tracks.length + 1;
+      const colorIndex = tracks.length % trackColors.length;
+
+      const newTrack: Track = {
+        id: crypto.randomUUID(),
+        name: `${trackType === 'midi' ? 'Synth' : 'Audio'} ${trackNumber}`,
+        color: trackColors[colorIndex],
+        type: trackType,
+        muted: false,
+        solo: false,
+        volume: 1,
+        ...(trackType === 'midi'
+          ? { midiClip: createEmptyMidiClip() }
+          : { audioUrl: undefined }),
+      };
+
+      setTracks((prev) => [...prev, newTrack]);
+
+      // Initialize MIDI part if it's a MIDI track
+      if (trackType === 'midi' && newTrack.midiClip) {
+        updateMidiPart(newTrack.id, newTrack.midiClip);
+      }
+
+      return newTrack;
+    },
+    [tracks.length]
+  );
+
+  // User clicked "Add Track" button - open dialog for selection
+  const handleAddTrackClick = useCallback(() => {
+    setIsTrackDialogOpen(true);
+  }, []);
+
+  // User selected MIDI from dialog
+  const handleSelectMidi = useCallback(() => {
+    createTrackOfType('midi');
+    setIsTrackDialogOpen(false);
+  }, [createTrackOfType]);
+
+  // User selected Audio from dialog - show file picker instead of creating immediately
+  const handleSelectAudio = useCallback(() => {
+    setIsAudioPickerOpen(true);
+    // Keep track dialog open in background - will close when user confirms
+  }, []);
+
+  // User selected an audio file from the picker
+  const handleAudioFileSelected = useCallback(
+    (audioFile: AudioFile) => {
+      const trackNumber = tracks.length + 1;
+      const trackColors = [
+        'bg-emerald-500',
+        'bg-blue-500',
+        'bg-purple-500',
+        'bg-pink-500',
+        'bg-yellow-500',
+        'bg-red-500',
+        'bg-cyan-500',
+        'bg-indigo-500',
+      ];
+      const colorIndex = tracks.length % trackColors.length;
+
+      const newTrack: Track = {
+        id: crypto.randomUUID(),
+        name: audioFile.name,
+        color: trackColors[colorIndex],
+        type: 'audio',
+        muted: false,
+        solo: false,
+        volume: 1,
+        audioUrl: audioFile.path,
+      };
+
+      setTracks((prev) => [...prev, newTrack]);
+
+      // Close both dialogs
+      setIsAudioPickerOpen(false);
+      setIsTrackDialogOpen(false);
+    },
+    [tracks.length]
+  );
+
+  const handleDeleteTrack = useCallback((trackId: string) => {
+    setTracks((prev) => {
+      const track = prev.find((t) => t.id === trackId);
+      
+      // Clean up audio engine resources
+      if (track?.type === 'midi') {
+        removeMidiTrack(trackId);
+      }
+      
+      return prev.filter((t) => t.id !== trackId);
+    });
+  }, []);
+
   const handleRightMouseDown = useCallback(() => {
     setIsResizingRight(true);
   }, []);
@@ -131,6 +252,8 @@ export default function DawShell() {
               tracks={tracks}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
+              onAddTrack={handleAddTrackClick}
+              onDeleteTrack={handleDeleteTrack}
             />
           </aside>
 
@@ -157,8 +280,23 @@ export default function DawShell() {
 
       {/* Bottom mixer - made a bit taller */}
       <footer className='h-52 border-t border-slate-800 bg-slate-950'>
-        <Mixer />
+        <Mixer tracks={tracks} />
       </footer>
+
+      {/* Track type selection dialog */}
+      <TrackTypeDialog
+        isOpen={isTrackDialogOpen}
+        onSelectMidi={handleSelectMidi}
+        onSelectAudio={handleSelectAudio}
+        onClose={() => setIsTrackDialogOpen(false)}
+      />
+
+      {/* Audio file picker dialog */}
+      <AudioFilePicker
+        isOpen={isAudioPickerOpen}
+        onSelectFile={handleAudioFileSelected}
+        onClose={() => setIsAudioPickerOpen(false)}
+      />
     </main>
   );
 }

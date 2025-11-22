@@ -7,12 +7,16 @@ interface TrackListProps {
   tracks: Track[];
   onToggleMute?: (trackId: string) => void;
   onToggleSolo?: (trackId: string) => void;
+  onAddTrack?: () => void;
+  onDeleteTrack?: (trackId: string) => void;
 }
 
 export default function TrackList({
   tracks,
   onToggleMute,
   onToggleSolo,
+  onAddTrack,
+  onDeleteTrack,
 }: TrackListProps) {
   return (
     <div className='h-full flex flex-col'>
@@ -26,12 +30,12 @@ export default function TrackList({
         {tracks.map((track) => (
           <div
             key={track.id}
-            className='h-16 flex items-center px-3 border-b border-slate-800 text-sm'
+            className='h-16 flex items-center px-3 border-b border-slate-800 text-sm group'
           >
             <div className={`w-2 h-8 rounded-full mr-2 ${track.color}`} />
-            <div className='flex flex-col flex-1'>
+            <div className='flex flex-col flex-1 min-w-0'>
               <div className='flex items-center gap-2'>
-                <span className='font-medium text-slate-100'>{track.name}</span>
+                <span className='font-medium text-slate-100 truncate'>{track.name}</span>
                 <span className='text-[8px] text-slate-500 uppercase'>
                   {track.type}
                 </span>
@@ -55,6 +59,13 @@ export default function TrackList({
                 >
                   S
                 </button>
+                <button
+                  className='px-1 py-0.5 rounded bg-slate-800 hover:bg-red-600 transition-colors ml-auto opacity-0 group-hover:opacity-100'
+                  onClick={() => onDeleteTrack?.(track.id)}
+                  title='Delete track'
+                >
+                  ✕
+                </button>
               </div>
             </div>
           </div>
@@ -62,7 +73,10 @@ export default function TrackList({
       </div>
 
       {/* Add track button */}
-      <button className='h-10 text-xs text-slate-300 border-t border-slate-800 hover:bg-slate-900'>
+      <button 
+        onClick={() => onAddTrack?.()}
+        className='h-10 text-xs text-slate-300 border-t border-slate-800 hover:bg-slate-800 transition-colors'
+      >
         + Add track
       </button>
     </div>
