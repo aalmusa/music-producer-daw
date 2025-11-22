@@ -165,7 +165,8 @@ export async function updateMidiParts(
   const existingParts = midiPartMap.get(trackId);
   if (existingParts) {
     existingParts.forEach((part) => {
-      part.stop();
+      // Cancel the part to avoid timing issues, then dispose
+      part.cancel();
       part.dispose();
     });
     midiPartMap.delete(trackId);
@@ -283,7 +284,7 @@ export function removeMidiTrack(trackId: string) {
   const parts = midiPartMap.get(trackId);
   if (parts) {
     parts.forEach((part) => {
-      part.stop();
+      part.cancel();
       part.dispose();
     });
     midiPartMap.delete(trackId);
