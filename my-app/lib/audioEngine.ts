@@ -128,12 +128,38 @@ export function updateMidiParts(
 
     // Convert MIDI notes to Tone.js Part events
     // Note times are relative to the clip (0 to clipData.bars)
-    const events = clipData.notes.map((note: MidiNote) => ({
-      time: `${note.start}m`, // Relative to clip start
-      note: noteNumberToName(note.pitch),
-      duration: `${note.duration}m`,
-      velocity: note.velocity,
-    }));
+    const events = clipData.notes.map((note: MidiNote) => {
+      // Convert decimal bars to Tone.js time format (bars:quarters:sixteenths)
+      // e.g., 3.0625 bars = 3 bars + 0.0625 bars = 3 bars + 0.25 quarter notes = 3:0:1
+      const bars = Math.floor(note.start);
+      const remainderBars = note.start - bars;
+      const quarters = Math.floor(remainderBars * 4); // 4 quarter notes per bar
+      const remainderQuarters = remainderBars * 4 - quarters;
+      const sixteenths = Math.round(remainderQuarters * 4); // 4 sixteenth notes per quarter
+
+      // Format: "bars:quarters:sixteenths"
+      const time = `${bars}:${quarters}:${sixteenths}`;
+
+      // Convert duration similarly
+      const durationBars = Math.floor(note.duration);
+      const durationRemainderBars = note.duration - durationBars;
+      const durationQuarters = Math.floor(durationRemainderBars * 4);
+      const durationRemainderQuarters =
+        durationRemainderBars * 4 - durationQuarters;
+      const durationSixteenths = Math.round(durationRemainderQuarters * 4);
+      const duration = `${durationBars}:${durationQuarters}:${durationSixteenths}`;
+
+      console.log(
+        `Note conversion: start=${note.start} → time="${time}", duration=${note.duration} → "${duration}"`
+      );
+
+      return {
+        time,
+        note: noteNumberToName(note.pitch),
+        duration,
+        velocity: note.velocity,
+      };
+    });
 
     // Create a Part for this clip
     const part = new Tone.Part((time, value) => {
