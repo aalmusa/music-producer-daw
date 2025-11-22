@@ -55,18 +55,19 @@ export function getTransportPosition(): string {
 
 // Progress from 0 to 1 across the loop
 export function getLoopProgress(): number {
-  const parts = transport.position.toString().split('.');
-  const bars = parseInt(parts[0] ?? '0', 10);
-  const beats = parseInt(parts[1] ?? '0', 10);
-  const six = parseInt(parts[2] ?? '0', 10);
+  // Get current position in seconds
+  const seconds = transport.seconds;
 
-  const beatsPerBar = 4;
-  const totalBeats = bars * beatsPerBar + beats + six / 4;
-  const loopBeats = LOOP_BARS * beatsPerBar;
+  // Get loop duration in seconds
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
 
-  if (!loopBeats) return 0;
+  if (!loopDuration) return 0;
 
-  return (totalBeats % loopBeats) / loopBeats;
+  // Calculate position within the loop (0 to 1)
+  // Modulo ensures we stay within 0-1 range even if transport goes beyond loop end
+  const progress = (seconds % loopDuration) / loopDuration;
+
+  return Math.max(0, Math.min(1, progress));
 }
 
 // ============ MIDI SYNTH FUNCTIONS ============
