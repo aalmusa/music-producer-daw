@@ -14,7 +14,7 @@ let metronomeSynth: Tone.MembraneSynth | null = null;
 
 // MIDI synthesizers and parts
 const synthMap = new Map<string, Tone.PolySynth>();
-const midiPartMap = new Map<string, Tone.Part>();
+const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
 
 export async function initAudio() {
   if (!isInitialized) {
@@ -55,18 +55,19 @@ export function getTransportPosition(): string {
 
 // Progress from 0 to 1 across the loop
 export function getLoopProgress(): number {
-  const parts = transport.position.toString().split('.');
-  const bars = parseInt(parts[0] ?? '0', 10);
-  const beats = parseInt(parts[1] ?? '0', 10);
-  const six = parseInt(parts[2] ?? '0', 10);
+  // Get current position in seconds
+  const seconds = transport.seconds;
 
-  const beatsPerBar = 4;
-  const totalBeats = bars * beatsPerBar + beats + six / 4;
-  const loopBeats = LOOP_BARS * beatsPerBar;
+  // Get loop duration in seconds
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
 
-  if (!loopBeats) return 0;
+  if (!loopDuration) return 0;
 
-  return (totalBeats % loopBeats) / loopBeats;
+  // Calculate position within the loop (0 to 1)
+  // Modulo ensures we stay within 0-1 range even if transport goes beyond loop end
+  const progress = (seconds % loopDuration) / loopDuration;
+
+  return Math.max(0, Math.min(1, progress));
 }
 
 // ============ MIDI SYNTH FUNCTIONS ============
@@ -97,61 +98,93 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
 }
 
 /**
- * Updates the MIDI part for a track with new clip data
+ * Updates all MIDI parts for a track with multiple clips
  */
-export function updateMidiPart(trackId: string, clipData: MidiClipData | null) {
-  // Remove existing part if it exists
-  const existingPart = midiPartMap.get(trackId);
-  if (existingPart) {
-    existingPart.stop();
-    existingPart.dispose();
+export function updateMidiParts(
+  trackId: string,
+  clips: MidiClipData[] | null | undefined
+) {
+  // Remove existing parts if they exist
+  const existingParts = midiPartMap.get(trackId);
+  if (existingParts) {
+    existingParts.forEach((part) => {
+      part.stop();
+      part.dispose();
+    });
     midiPartMap.delete(trackId);
   }
 
-  // If no clip data, just return (track is empty)
-  if (!clipData || clipData.notes.length === 0) {
+  // If no clips, just return (track is empty)
+  if (!clips || clips.length === 0) {
     return;
   }
 
   const synth = getSynthForTrack(trackId);
+  const parts: Tone.Part[] = [];
 
-  // Convert MIDI notes to Tone.js Part events
-  const events = clipData.notes.map((note: MidiNote) => ({
-    time: `${note.start}m`, // Convert bars to musical time
-    note: noteNumberToName(note.pitch),
-    duration: `${note.duration}m`,
-    velocity: note.velocity,
-  }));
+  // Create a part for each clip
+  clips.forEach((clipData) => {
+    if (clipData.notes.length === 0) return;
 
-  // Create a new Part
-  const part = new Tone.Part((time, value) => {
-    synth.triggerAttackRelease(
-      value.note,
-      value.duration,
-      time,
-      value.velocity
-    );
-  }, events);
+    // Convert MIDI notes to Tone.js Part events
+    // Note times are relative to the clip (0 to clipData.bars)
+    const events = clipData.notes.map((note: MidiNote) => ({
+      time: `${note.start}m`, // Relative to clip start
+      note: noteNumberToName(note.pitch),
+      duration: `${note.duration}m`,
+      velocity: note.velocity,
+    }));
 
-  // Set part to loop within the clip's bar range
-  part.loop = true;
-  part.loopStart = 0;
-  part.loopEnd = `${clipData.bars}m`;
+    // Create a Part for this clip
+    const part = new Tone.Part((time, value) => {
+      synth.triggerAttackRelease(
+        value.note,
+        value.duration,
+        time,
+        value.velocity
+      );
+    }, events);
 
-  // Start the part at time 0 in the transport
-  part.start(0);
+    // DON'T loop the part - let the transport loop handle it
+    part.loop = false;
 
-  midiPartMap.set(trackId, part);
+    // Start this part at the clip's position in the timeline
+    // This is the key fix: position in the 16-bar timeline
+    part.start(`${clipData.startBar}m`);
+
+    // Stop it after the clip duration
+    part.stop(`${clipData.startBar + clipData.bars}m`);
+
+    parts.push(part);
+  });
+
+  if (parts.length > 0) {
+    midiPartMap.set(trackId, parts);
+  }
 }
 
 /**
- * Removes a track's MIDI part and synth
+ * Legacy function for single clip - redirects to new function
+ * @deprecated Use updateMidiParts instead
+ */
+export function updateMidiPart(trackId: string, clipData: MidiClipData | null) {
+  if (clipData) {
+    updateMidiParts(trackId, [clipData]);
+  } else {
+    updateMidiParts(trackId, null);
+  }
+}
+
+/**
+ * Removes a track's MIDI parts and synth
  */
 export function removeMidiTrack(trackId: string) {
-  const part = midiPartMap.get(trackId);
-  if (part) {
-    part.stop();
-    part.dispose();
+  const parts = midiPartMap.get(trackId);
+  if (parts) {
+    parts.forEach((part) => {
+      part.stop();
+      part.dispose();
+    });
     midiPartMap.delete(trackId);
   }
 
