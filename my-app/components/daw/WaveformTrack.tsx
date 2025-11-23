@@ -1,20 +1,21 @@
 "use client";
 
+import { createAudioLoopPlayer, removeAudioLoopPlayer } from "@/lib/audioEngine";
 import { useEffect, useRef, useState } from "react";
 import * as Tone from "tone";
 
 type WaveformTrackProps = {
+  trackId: string;
   fileUrl: string;
   label?: string;
 };
 
-export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
+export default function WaveformTrack({ trackId, fileUrl, label }: WaveformTrackProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wavesurferRef = useRef<any>(null);
   const [isReady, setIsReady] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
 
-  // Create wavesurfer, load file
+  // Create wavesurfer for visualization only (not for playback)
   useEffect(() => {
     let isCancelled = false;
 
@@ -31,6 +32,7 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
         height: 48,
         barWidth: 2,
         barGap: 1,
+        interact: false, // Disable interaction since playback is handled by Tone.js
       });
 
       wavesurferRef.current = ws;
@@ -39,10 +41,6 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
         if (!isCancelled) {
           setIsReady(true);
         }
-      });
-
-      ws.on("finish", () => {
-        setIsPlaying(false);
       });
 
       ws.load(fileUrl);
@@ -59,74 +57,66 @@ export default function WaveformTrack({ fileUrl, label }: WaveformTrackProps) {
     };
   }, [fileUrl]);
 
-  // Hook wavesurfer to Tone transport, so global Play and Stop control this clip
+  // Create Tone.js audio loop player (4 bars, quantized to BPM)
+  useEffect(() => {
+    if (!isReady) return;
+
+    let isCancelled = false;
+
+    async function setupAudioLoop() {
+      try {
+        await createAudioLoopPlayer(trackId, fileUrl);
+        console.log(`✓ Audio loop player created for track ${trackId}`);
+      } catch (error) {
+        console.error(`✗ Failed to create audio loop player:`, error);
+      }
+    }
+
+    setupAudioLoop();
+
+    return () => {
+      isCancelled = true;
+      if (!isCancelled) {
+        removeAudioLoopPlayer(trackId);
+      }
+    };
+  }, [trackId, fileUrl, isReady]);
+
+  // Update wavesurfer progress to match transport
   useEffect(() => {
     if (!isReady || !wavesurferRef.current) return;
 
     const transport = Tone.getTransport();
     let frameId: number;
-    let lastState = transport.state;
 
-    const loop = () => {
-      const state = transport.state;
-
-      if (state !== lastState) {
-        if (state === "started") {
-          // When the global transport starts, restart this clip from the beginning
-          wavesurferRef.current.stop();
-          wavesurferRef.current.seekTo(0);
-          wavesurferRef.current.play();
-          setIsPlaying(true);
-        } else {
-          // On stop or pause, stop this clip
-          wavesurferRef.current.stop();
-          setIsPlaying(false);
-        }
-
-        lastState = state;
+    const updateProgress = () => {
+      if (transport.state === "started") {
+        // Calculate progress within 4 bars (0 to 1)
+        const fourBarsDuration = transport.toSeconds('4m');
+        const currentTime = transport.seconds % fourBarsDuration;
+        const progress = currentTime / fourBarsDuration;
+        
+        // Update wavesurfer cursor position
+        wavesurferRef.current.seekTo(progress);
       }
 
-      frameId = requestAnimationFrame(loop);
+      frameId = requestAnimationFrame(updateProgress);
     };
 
-    loop();
+    updateProgress();
 
     return () => {
       cancelAnimationFrame(frameId);
     };
   }, [isReady]);
 
-  // Local preview controls for this track only
-  const handleTogglePlay = () => {
-    if (!wavesurferRef.current || !isReady) return;
-    wavesurferRef.current.playPause();
-    setIsPlaying((prev) => !prev);
-  };
-
-  const handleStop = () => {
-    if (!wavesurferRef.current) return;
-    wavesurferRef.current.stop();
-    setIsPlaying(false);
-  };
-
   return (
     <div className="flex items-center gap-2 w-full">
       <div className="flex flex-col items-center justify-center w-16 text-[10px] text-slate-300">
         {label && <div className="mb-1 truncate w-full text-center">{label}</div>}
-        <button
-          className="px-2 py-0.5 mb-1 rounded bg-emerald-500 text-slate-900 text-[10px]"
-          onClick={handleTogglePlay}
-          disabled={!isReady}
-        >
-          {isPlaying ? "Pause" : "Play"}
-        </button>
-        <button
-          className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px]"
-          onClick={handleStop}
-          disabled={!isReady}
-        >
-          Stop
-        </button>
+        <div className="px-2 py-1 text-center text-slate-400">
+          4 bars
+        </div>
       </div>
 
       <div className="flex-1">

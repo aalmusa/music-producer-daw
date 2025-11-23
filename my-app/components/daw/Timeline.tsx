@@ -250,7 +250,7 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
             <div className='relative h-full flex items-center'>
               {track.type === 'audio' && track.audioUrl ? (
                 <div className='px-2 w-full'>
-                  <WaveformTrack fileUrl={track.audioUrl} label={track.name} />
+                  <WaveformTrack trackId={track.id} fileUrl={track.audioUrl} label={track.name} />
                 </div>
               ) : track.type === 'midi' ? (
                 <>

@@ -18,6 +18,9 @@ const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
 const samplerMap = new Map<string, Tone.Sampler>(); // Samplers for drum samples
 
+// Audio loop players for audio tracks (4-bar loops quantized to BPM)
+const audioPlayerMap = new Map<string, Tone.Player>();
+
 export async function initAudio() {
   if (!isInitialized) {
     await Tone.start(); // unlocks audio on first click
@@ -49,6 +52,11 @@ export function stopTransport() {
 
 export function setBpm(bpm: number) {
   transport.bpm.rampTo(bpm, 0.1);
+  // Update audio loop playback rates to match new BPM
+  // Use setTimeout to allow BPM ramp to complete
+  setTimeout(() => {
+    updateAudioLoopBpm();
+  }, 150);
 }
 
 export function getTransportPosition(): string {
@@ -345,4 +353,115 @@ export function previewNote(
   const synth = getSynthForTrack(trackId);
   const noteName = noteNumberToName(pitch);
   synth.triggerAttackRelease(noteName, duration, undefined, velocity);
+}
+
+// ============ AUDIO LOOP PLAYER FUNCTIONS ============
+
+/**
+ * Creates or updates an audio loop player for a track
+ * Audio loops are quantized to 4 bars and sync with the transport BPM
+ */
+export async function createAudioLoopPlayer(
+  trackId: string,
+  audioUrl: string
+): Promise<Tone.Player> {
+  // Remove existing player if it exists
+  const existingPlayer = audioPlayerMap.get(trackId);
+  if (existingPlayer) {
+    existingPlayer.stop();
+    existingPlayer.dispose();
+    audioPlayerMap.delete(trackId);
+  }
+
+  return new Promise((resolve, reject) => {
+    // Create a new player with looping enabled
+    const player = new Tone.Player({
+      url: audioUrl,
+      loop: true,
+      onload: () => {
+        // Calculate the duration of 4 bars at current BPM
+        const fourBarsDuration = transport.toSeconds('4m');
+        
+        // Set playback rate to fit the audio into exactly 4 bars
+        // This quantizes the loop to the project's BPM
+        const originalDuration = player.buffer.duration;
+        const playbackRate = originalDuration / fourBarsDuration;
+        player.playbackRate = playbackRate;
+        
+        // Set loop points to 4 bars
+        player.loopStart = 0;
+        player.loopEnd = fourBarsDuration;
+        
+        console.log(
+          `✓ Audio loop loaded for track ${trackId}:`,
+          `original=${originalDuration.toFixed(2)}s,`,
+          `4bars=${fourBarsDuration.toFixed(2)}s,`,
+          `rate=${playbackRate.toFixed(3)}`
+        );
+        
+        audioPlayerMap.set(trackId, player);
+        resolve(player);
+      },
+      onerror: (error) => {
+        console.error(`✗ Failed to load audio for track ${trackId}:`, error);
+        reject(error);
+      },
+    }).toDestination();
+    
+    // Sync player with transport
+    player.sync().start(0);
+  });
+}
+
+/**
+ * Updates the playback rate of all audio loops when BPM changes
+ */
+export function updateAudioLoopBpm() {
+  const fourBarsDuration = transport.toSeconds('4m');
+  
+  audioPlayerMap.forEach((player, trackId) => {
+    const originalDuration = player.buffer.duration;
+    const playbackRate = originalDuration / fourBarsDuration;
+    player.playbackRate = playbackRate;
+    player.loopEnd = fourBarsDuration;
+    
+    console.log(
+      `Updated loop rate for track ${trackId}: ${playbackRate.toFixed(3)}`
+    );
+  });
+}
+
+/**
+ * Removes an audio loop player
+ */
+export function removeAudioLoopPlayer(trackId: string) {
+  const player = audioPlayerMap.get(trackId);
+  if (player) {
+    player.unsync();
+    player.stop();
+    player.dispose();
+    audioPlayerMap.delete(trackId);
+  }
+}
+
+/**
+ * Sets volume for an audio loop player
+ */
+export function setAudioLoopVolume(trackId: string, volume: number) {
+  const player = audioPlayerMap.get(trackId);
+  if (player) {
+    // Convert 0-1 range to decibels (-24 to 0)
+    const db = volume === 0 ? -Infinity : (volume - 1) * 24;
+    player.volume.value = db;
+  }
+}
+
+/**
+ * Mutes or unmutes an audio loop player
+ */
+export function setAudioLoopMute(trackId: string, muted: boolean) {
+  const player = audioPlayerMap.get(trackId);
+  if (player) {
+    player.mute = muted;
+  }
 }

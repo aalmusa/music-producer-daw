@@ -2,6 +2,9 @@
 /**
  * Audio Library Configuration
  * Defines available audio files and their metadata
+ * 
+ * NOTE: All audio tracks are automatically quantized to 4-bar loops
+ * and synced to the project BPM using Tone.js time-stretching.
  */
 
 export interface AudioFile {

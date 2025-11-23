@@ -1,6 +1,6 @@
 'use client';
 
-import { removeMidiTrack, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
+import { removeAudioLoopPlayer, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
@@ -78,6 +78,8 @@ export default function DawShell() {
           const newMuted = !track.muted;
           if (track.type === 'midi') {
             setTrackMute(trackId, newMuted);
+          } else if (track.type === 'audio') {
+            setAudioLoopMute(trackId, newMuted);
           }
           return { ...track, muted: newMuted };
         }
@@ -230,6 +232,8 @@ export default function DawShell() {
       // Clean up audio engine resources
       if (track?.type === 'midi') {
         removeMidiTrack(trackId);
+      } else if (track?.type === 'audio') {
+        removeAudioLoopPlayer(trackId);
       }
       
       return prev.filter((t) => t.id !== trackId);
