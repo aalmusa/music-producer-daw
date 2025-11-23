@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Tone from 'tone';
+import type WaveSurfer from 'wavesurfer.js';
 
 interface AudioClipGeneratorModalProps {
   isOpen: boolean;
@@ -31,6 +32,89 @@ export default function AudioClipGeneratorModal({
   const [error, setError] = useState<string | null>(null);
   const [enhancedPrompt, setEnhancedPrompt] = useState<string | null>(null);
 
+  // Waveform and trim controls
+  const waveformContainerRef = useRef<HTMLDivElement | null>(null);
+  const wavesurferRef = useRef<WaveSurfer | null>(null);
+  const [trimStart, setTrimStart] = useState(0); // In seconds
+  const [trimEnd, setTrimEnd] = useState(0); // In seconds
+  const [audioDuration, setAudioDuration] = useState(0); // Total duration
+
+  // Load waveform when audio is generated
+  useEffect(() => {
+    if (!generatedAudioUrl || !waveformContainerRef.current) return;
+
+    let isCancelled = false;
+
+    async function loadWaveform() {
+      const WaveSurfer = (await import('wavesurfer.js')).default;
+      const RegionsPlugin = (
+        await import('wavesurfer.js/dist/plugins/regions.js')
+      ).default;
+
+      if (isCancelled || !waveformContainerRef.current) return;
+
+      // Destroy existing wavesurfer
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+      }
+
+      const ws = WaveSurfer.create({
+        container: waveformContainerRef.current,
+        waveColor: '#64748b',
+        progressColor: '#22c55e',
+        cursorColor: '#e5e7eb',
+        height: 120,
+        barWidth: 2,
+        barGap: 1,
+        interact: true,
+      });
+
+      // Add regions plugin for trim markers
+      const regions = ws.registerPlugin(RegionsPlugin.create());
+
+      ws.on('ready', () => {
+        if (!isCancelled) {
+          const duration = ws.getDuration();
+          setAudioDuration(duration);
+          setTrimStart(0);
+          setTrimEnd(duration);
+
+          // Add region to show trimmed area
+          regions.addRegion({
+            start: 0,
+            end: duration,
+            color: 'rgba(34, 197, 94, 0.2)', // emerald with transparency
+            drag: false,
+            resize: true,
+          });
+
+          // Update trim values when region is resized
+          regions.on('region-updated', (region) => {
+            setTrimStart(region.start);
+            setTrimEnd(region.end);
+          });
+        }
+      });
+
+      ws.on('interaction', () => {
+        ws.play();
+      });
+
+      ws.load(generatedAudioUrl!);
+      wavesurferRef.current = ws;
+    }
+
+    loadWaveform();
+
+    return () => {
+      isCancelled = true;
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
+      }
+    };
+  }, [generatedAudioUrl]);
+
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       setError('Please enter a description for the audio clip');
@@ -46,7 +130,7 @@ export default function AudioClipGeneratorModal({
       // Calculate duration for 4 bars at current BPM
       const transport = Tone.getTransport();
       const fourBarsDurationSeconds = transport.toSeconds('4m');
-      const musicLengthMs = fourBarsDurationSeconds * 1000;
+      const musicLengthMs = Math.round(fourBarsDurationSeconds * 1000); // Round to integer
       const bpm = transport.bpm.value;
 
       // Step 1: Use LangChain agent to enhance the prompt
@@ -108,60 +192,191 @@ export default function AudioClipGeneratorModal({
   };
 
   const handlePreview = async () => {
-    if (!generatedAudioUrl) return;
+    if (!wavesurferRef.current) return;
 
-    // Stop existing preview if playing
-    if (previewPlayer) {
-      previewPlayer.stop();
-      previewPlayer.dispose();
-      setPreviewPlayer(null);
+    // Toggle play/pause
+    if (isPlaying) {
+      wavesurferRef.current.pause();
       setIsPlaying(false);
-      return;
-    }
+    } else {
+      // Play from trim start position
+      wavesurferRef.current.setTime(trimStart);
+      wavesurferRef.current.play();
+      setIsPlaying(true);
 
-    try {
-      // Create a new player for preview (not synced to transport)
-      const player = new Tone.Player({
-        url: generatedAudioUrl,
-        onload: () => {
-          player.start();
-          setIsPlaying(true);
-          console.log('✓ Preview started');
-        },
-        onstop: () => {
+      // Stop at trim end
+      const checkPosition = () => {
+        if (
+          wavesurferRef.current &&
+          wavesurferRef.current.getCurrentTime() >= trimEnd
+        ) {
+          wavesurferRef.current.pause();
           setIsPlaying(false);
-          setPreviewPlayer(null);
-        },
-      }).toDestination();
-
-      setPreviewPlayer(player);
-    } catch (err) {
-      console.error('Error previewing audio:', err);
-      setError('Failed to preview audio');
+        } else if (isPlaying) {
+          requestAnimationFrame(checkPosition);
+        }
+      };
+      checkPosition();
     }
   };
 
-  const handleAccept = () => {
-    if (!generatedAudioUrl) return;
+  const trimAudio = async (
+    audioUrl: string,
+    start: number,
+    end: number
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioContextClass) {
+        reject(new Error('AudioContext not supported'));
+        return;
+      }
+      const audioContext = new AudioContextClass();
 
-    // Stop preview if playing
-    if (previewPlayer) {
-      previewPlayer.stop();
-      previewPlayer.dispose();
-      setPreviewPlayer(null);
+      // Convert base64 to array buffer
+      fetch(audioUrl)
+        .then((response) => response.arrayBuffer())
+        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
+        .then((audioBuffer) => {
+          const sampleRate = audioBuffer.sampleRate;
+          const startSample = Math.floor(start * sampleRate);
+          const endSample = Math.floor(end * sampleRate);
+          const trimmedLength = endSample - startSample;
+
+          // Create new buffer for trimmed audio
+          const trimmedBuffer = audioContext.createBuffer(
+            audioBuffer.numberOfChannels,
+            trimmedLength,
+            sampleRate
+          );
+
+          // Copy trimmed portion
+          for (
+            let channel = 0;
+            channel < audioBuffer.numberOfChannels;
+            channel++
+          ) {
+            const sourceData = audioBuffer.getChannelData(channel);
+            const trimmedData = trimmedBuffer.getChannelData(channel);
+            for (let i = 0; i < trimmedLength; i++) {
+              trimmedData[i] = sourceData[startSample + i];
+            }
+          }
+
+          // Convert buffer to WAV format
+          const wavData = audioBufferToWav(trimmedBuffer);
+          const blob = new Blob([wavData], { type: 'audio/wav' });
+          const trimmedUrl = URL.createObjectURL(blob);
+          resolve(trimmedUrl);
+        })
+        .catch(reject);
+    });
+  };
+
+  const audioBufferToWav = (buffer: AudioBuffer): ArrayBuffer => {
+    const length = buffer.length * buffer.numberOfChannels * 2 + 44;
+    const arrayBuffer = new ArrayBuffer(length);
+    const view = new DataView(arrayBuffer);
+    const channels: Float32Array[] = [];
+    let offset = 0;
+    let pos = 0;
+
+    // Write WAV header
+    const setUint16 = (data: number) => {
+      view.setUint16(pos, data, true);
+      pos += 2;
+    };
+    const setUint32 = (data: number) => {
+      view.setUint32(pos, data, true);
+      pos += 4;
+    };
+
+    // RIFF identifier
+    setUint32(0x46464952);
+    // file length
+    setUint32(length - 8);
+    // RIFF type
+    setUint32(0x45564157);
+    // format chunk identifier
+    setUint32(0x20746d66);
+    // format chunk length
+    setUint32(16);
+    // sample format (raw)
+    setUint16(1);
+    // channel count
+    setUint16(buffer.numberOfChannels);
+    // sample rate
+    setUint32(buffer.sampleRate);
+    // byte rate
+    setUint32(buffer.sampleRate * buffer.numberOfChannels * 2);
+    // block align
+    setUint16(buffer.numberOfChannels * 2);
+    // bits per sample
+    setUint16(16);
+    // data chunk identifier
+    setUint32(0x61746164);
+    // data chunk length
+    setUint32(length - pos - 4);
+
+    // Write audio data
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      channels.push(buffer.getChannelData(i));
     }
 
-    // Generate a clip name from the prompt
-    const clipName = prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '');
+    while (pos < length) {
+      for (let i = 0; i < buffer.numberOfChannels; i++) {
+        let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+        sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        view.setInt16(pos, sample, true);
+        pos += 2;
+      }
+      offset++;
+    }
 
-    // Call the callback with the generated audio
-    onClipGenerated(generatedAudioUrl, clipName);
+    return arrayBuffer;
+  };
 
-    // Close the modal
-    handleClose();
+  const handleAccept = async () => {
+    if (!generatedAudioUrl) return;
+
+    try {
+      // Stop preview if playing
+      if (wavesurferRef.current && isPlaying) {
+        wavesurferRef.current.pause();
+        setIsPlaying(false);
+      }
+
+      // Generate a clip name from the prompt
+      const clipName = prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '');
+
+      // Trim the audio if needed
+      let finalAudioUrl = generatedAudioUrl;
+      if (trimStart > 0 || trimEnd < audioDuration) {
+        console.log(`Trimming audio: ${trimStart}s to ${trimEnd}s`);
+        finalAudioUrl = await trimAudio(generatedAudioUrl, trimStart, trimEnd);
+      }
+
+      // Call the callback with the (possibly trimmed) audio
+      onClipGenerated(finalAudioUrl, clipName);
+
+      // Close the modal
+      handleClose();
+    } catch (err) {
+      console.error('Error accepting audio:', err);
+      setError('Failed to process audio');
+    }
   };
 
   const handleClose = () => {
+    // Stop and cleanup wavesurfer
+    if (wavesurferRef.current) {
+      wavesurferRef.current.destroy();
+      wavesurferRef.current = null;
+    }
+
     // Stop and cleanup preview player
     if (previewPlayer) {
       previewPlayer.stop();
@@ -176,6 +391,9 @@ export default function AudioClipGeneratorModal({
     setIsPlaying(false);
     setError(null);
     setEnhancedPrompt(null);
+    setTrimStart(0);
+    setTrimEnd(0);
+    setAudioDuration(0);
 
     onClose();
   };
@@ -345,6 +563,24 @@ export default function AudioClipGeneratorModal({
                     <span className='text-sm font-medium text-slate-300'>
                       Audio Generated Successfully
                     </span>
+                  </div>
+                </div>
+
+                {/* Waveform Display */}
+                <div className='space-y-2'>
+                  <label className='block text-xs font-medium text-slate-400'>
+                    Waveform Preview (Drag edges to trim)
+                  </label>
+                  <div
+                    ref={waveformContainerRef}
+                    className='bg-slate-900 rounded-lg border border-slate-700 overflow-hidden'
+                  />
+
+                  {/* Trim Info */}
+                  <div className='flex justify-between text-xs text-slate-400'>
+                    <span>Start: {trimStart.toFixed(2)}s</span>
+                    <span>Duration: {(trimEnd - trimStart).toFixed(2)}s</span>
+                    <span>End: {trimEnd.toFixed(2)}s</span>
                   </div>
                 </div>
 
