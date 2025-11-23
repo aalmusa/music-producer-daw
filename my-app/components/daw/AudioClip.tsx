@@ -18,6 +18,7 @@ interface AudioClipProps {
   onDelete: () => void;
   onRegenerate?: () => void; // Optional callback for regenerating/replacing clip
   onDuplicate?: () => void; // Optional callback for duplicating clip
+  onTrim?: () => void; // Optional callback for trimming clip
 }
 
 export default function AudioClip({
@@ -28,6 +29,7 @@ export default function AudioClip({
   onDelete,
   onRegenerate,
   onDuplicate,
+  onTrim,
 }: AudioClipProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
@@ -158,6 +160,7 @@ export default function AudioClip({
       menu.style.top = `${e.clientY}px`;
 
       const options = [
+        { label: '✂️ Trim', action: onTrim, condition: !!onTrim },
         { label: '🔁 Duplicate to Next Slot', action: onDuplicate, condition: !!onDuplicate },
         { label: '🗑️ Delete', action: onDelete, condition: true },
       ];
@@ -190,7 +193,7 @@ export default function AudioClip({
       };
       setTimeout(() => document.addEventListener('click', removeMenu), 0);
     },
-    [onDelete, onDuplicate]
+    [onDelete, onDuplicate, onTrim]
   );
 
   return (

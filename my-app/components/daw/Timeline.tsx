@@ -16,6 +16,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import AudioClip from './AudioClip';
 import AudioClipGeneratorModal from './AudioClipGeneratorModal';
+import AudioClipTrimModal from './AudioClipTrimModal';
 import MidiClip from './MidiClip';
 import PianoRollModal from './PianoRollModal';
 
@@ -40,6 +41,11 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
   const [audioGenTrackId, setAudioGenTrackId] = useState<string | null>(null);
   const [audioGenClipId, setAudioGenClipId] = useState<string | null>(null);
   const [audioGenStartBar, setAudioGenStartBar] = useState(0);
+
+  // Audio trim modal state
+  const [audioTrimModalOpen, setAudioTrimModalOpen] = useState(false);
+  const [trimTrackId, setTrimTrackId] = useState<string | null>(null);
+  const [trimClipId, setTrimClipId] = useState<string | null>(null);
 
   // Track which clips have been initialized to avoid duplicates
   const [initializedClips, setInitializedClips] = useState<Set<string>>(
@@ -423,6 +429,58 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
     setAudioGenStartBar(0);
   };
 
+  // Open trim modal for existing audio clip
+  const handleOpenTrimModal = (trackId: string, clipId: string) => {
+    setTrimTrackId(trackId);
+    setTrimClipId(clipId);
+    setAudioTrimModalOpen(true);
+  };
+
+  // Handle trim complete
+  const handleTrimComplete = (trimmedAudioUrl: string) => {
+    if (!trimTrackId || !trimClipId) return;
+
+    // Remove old player
+    removeAudioLoopPlayer(trimTrackId, trimClipId);
+
+    // Remove from initialized set
+    const clipKey = `${trimTrackId}:${trimClipId}`;
+    setInitializedClips((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(clipKey);
+      return newSet;
+    });
+
+    // Update clip with new trimmed audio
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trimTrackId) return track;
+
+        const updatedClips = (track.audioClips || []).map((clip) => {
+          if (clip.id === trimClipId) {
+            return {
+              ...clip,
+              audioUrl: trimmedAudioUrl,
+            };
+          }
+          return clip;
+        });
+
+        return { ...track, audioClips: updatedClips };
+      })
+    );
+
+    // Close modal
+    setAudioTrimModalOpen(false);
+  };
+
+  // Close trim modal
+  const handleCloseTrimModal = () => {
+    setAudioTrimModalOpen(false);
+    setTrimTrackId(null);
+    setTrimClipId(null);
+  };
+
   // Get the clip being edited
   const editingTrack = tracks.find((t) => t.id === editingTrackId);
   const editingClip = editingTrack?.midiClips?.find(
@@ -662,6 +720,7 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                       onDuplicate={() =>
                         handleDuplicateAudioClip(track.id, clip.id)
                       }
+                      onTrim={() => handleOpenTrimModal(track.id, clip.id)}
                     />
                   ))}
                 </>
@@ -759,6 +818,26 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
           onClipGenerated={handleAudioClipGenerated}
         />
       )}
+
+      {/* Audio Clip Trim Modal */}
+      {trimTrackId &&
+        trimClipId &&
+        (() => {
+          const track = tracks.find((t) => t.id === trimTrackId);
+          const clip = track?.audioClips?.find((c) => c.id === trimClipId);
+
+          if (!clip) return null;
+
+          return (
+            <AudioClipTrimModal
+              isOpen={audioTrimModalOpen}
+              onClose={handleCloseTrimModal}
+              audioUrl={clip.audioUrl}
+              clipName={clip.name || 'Audio Clip'}
+              onTrimComplete={handleTrimComplete}
+            />
+          );
+        })()}
     </div>
   );
 }
