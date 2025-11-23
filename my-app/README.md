@@ -1,8 +1,8 @@
-AI Music Studio
+Mixr
 
 "Cursor for Music Production"
 
-AI Music Studio is an intelligent, collaborative music production environment that bridges the gap between creative intent and technical execution. It acts as a co-producer, helping you define your sound through conversation and audio analysis before generating a fully scaffolded project in a web-based DAW.
+Mixr is an intelligent, collaborative music production environment that bridges the gap between creative intent and technical execution. It acts as a co-producer, helping you define your sound through conversation and audio analysis before generating a fully scaffolded project in a web-based DAW.
 
 Powered by Google Gemini, TensorFlow, Essentia.js, ElevenLabs and Tone.js.
 
@@ -79,6 +79,11 @@ Prerequisites
 Node.js (v18+)
 
 A Google Generative AI API Key
+
+**FFmpeg** - Required for audio processing (install via Homebrew on macOS):
+```bash
+brew install ffmpeg
+```
 
 Installation
 
