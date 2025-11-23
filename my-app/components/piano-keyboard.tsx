@@ -1,85 +1,98 @@
 "use client"
 
 import * as React from "react"
+import { getScaleNotes, type ScaleType } from "@/lib/musical-scales"
 
 interface PianoKeyboardProps {
   className?: string
-  keySignature?: string // e.g., "G♭ Major"
-}
-
-// Major scale patterns: intervals from root (W=whole step, H=half step)
-// Pattern: W-W-H-W-W-W-H
-const getMajorScaleNotes = (root: string): string[] => {
-  const allNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-  const enharmonicMap: Record<string, string> = {
-    'Db': 'C#',
-    'Eb': 'D#',
-    'Gb': 'F#',
-    'Ab': 'G#',
-    'Bb': 'A#',
-    'Cb': 'B',
-    'E#': 'F',
-    'Fb': 'E',
-    'B#': 'C'
-  }
-  
-  // Normalize the root note
-  let normalizedRoot = root
-  if (root.includes('♭')) {
-    normalizedRoot = root.replace('♭', 'b')
-  }
-  if (root.includes('♯')) {
-    normalizedRoot = root.replace('♯', '#')
-  }
-  
-  // Handle enharmonic equivalents
-  if (enharmonicMap[normalizedRoot]) {
-    normalizedRoot = enharmonicMap[normalizedRoot]
-  }
-  
-  const rootIndex = allNotes.indexOf(normalizedRoot)
-  if (rootIndex === -1) return []
-  
-  // Major scale intervals: 0, 2, 4, 5, 7, 9, 11 (W-W-H-W-W-W-H)
-  const intervals = [0, 2, 4, 5, 7, 9, 11]
-  return intervals.map(interval => allNotes[(rootIndex + interval) % 12])
+  keySignature?: string // e.g., "G♭ Major", "C Major", "A Minor"
 }
 
 export function PianoKeyboard({ className, keySignature = "G♭ Major" }: PianoKeyboardProps) {
-  // Extract root note from key signature (e.g., "G♭ Major" -> "G♭")
-  const rootNote = keySignature.split(' ')[0] || "G♭"
-  const scaleNotes = getMajorScaleNotes(rootNote)
+  // Extract root note and scale type from key signature (e.g., "G♭ Major" -> root: "G♭", scale: "Major")
+  const parts = keySignature.split(' ')
+  const rootNote = parts[0] || "G♭"
+  const scaleTypeString = parts.slice(1).join(' ').toLowerCase() || "major"
+  
+  // Determine scale type
+  const scaleType: ScaleType = scaleTypeString.includes('minor') ? 'minor' : 'major'
+  
+  // Get scale notes from the comprehensive scale database
+  const scaleNotes = React.useMemo(() => {
+    return getScaleNotes(rootNote, scaleType)
+  }, [rootNote, scaleType])
   
   // Map scale notes to our keyboard keys (considering enharmonics)
-  const keysInScale = new Set<string>()
-  
-  // Map enharmonic equivalents
-  scaleNotes.forEach(note => {
-    keysInScale.add(note)
-    // Add enharmonic equivalents
-    if (note === 'F#') keysInScale.add('Gb')
-    if (note === 'G#') keysInScale.add('Ab')
-    if (note === 'A#') keysInScale.add('Bb')
-    if (note === 'C#') keysInScale.add('Db')
-    if (note === 'D#') keysInScale.add('Eb')
-    if (note === 'B') keysInScale.add('Cb')
-  })
+  const keysInScale = React.useMemo(() => {
+    const keys = new Set<string>()
+    
+    // Comprehensive enharmonic mapping
+    const enharmonicMap: Record<string, string[]> = {
+      'C#': ['Db'],
+      'Db': ['C#'],
+      'D#': ['Eb'],
+      'Eb': ['D#'],
+      'F#': ['Gb'],
+      'Gb': ['F#'],
+      'G#': ['Ab'],
+      'Ab': ['G#'],
+      'A#': ['Bb'],
+      'Bb': ['A#'],
+      'B': ['Cb'],
+      'Cb': ['B'],
+      'E#': ['F'],
+      'F': ['E#'],
+      'B#': ['C'],
+      'C': ['B#'],
+      'E': ['Fb'],
+      'Fb': ['E'],
+    }
+    
+    // Add all scale notes and their enharmonic equivalents
+    scaleNotes.forEach(note => {
+      keys.add(note)
+      // Add enharmonic equivalents
+      if (enharmonicMap[note]) {
+        enharmonicMap[note].forEach(eq => keys.add(eq))
+      }
+    })
+    
+    return keys
+  }, [scaleNotes])
   
   // Check if a key is in the scale
   const isKeyInScale = (keyName: string): boolean => {
     // Direct match
     if (keysInScale.has(keyName)) return true
+    
     // Check enharmonic equivalents
-    const enharmonicMap: Record<string, string> = {
-      'C#': 'Db', 'Db': 'C#',
-      'D#': 'Eb', 'Eb': 'D#',
-      'F#': 'Gb', 'Gb': 'F#',
-      'G#': 'Ab', 'Ab': 'G#',
-      'A#': 'Bb', 'Bb': 'A#',
-      'B': 'Cb', 'Cb': 'B'
+    const enharmonicMap: Record<string, string[]> = {
+      'C#': ['Db'],
+      'Db': ['C#'],
+      'D#': ['Eb'],
+      'Eb': ['D#'],
+      'F#': ['Gb'],
+      'Gb': ['F#'],
+      'G#': ['Ab'],
+      'Ab': ['G#'],
+      'A#': ['Bb'],
+      'Bb': ['A#'],
+      'B': ['Cb'],
+      'Cb': ['B'],
+      'E#': ['F'],
+      'F': ['E#'],
+      'B#': ['C'],
+      'C': ['B#'],
+      'E': ['Fb'],
+      'Fb': ['E'],
     }
-    const equivalent = enharmonicMap[keyName]
-    return equivalent ? keysInScale.has(equivalent) : false
+    
+    const equivalents = enharmonicMap[keyName]
+    if (equivalents) {
+      return equivalents.some(eq => keysInScale.has(eq))
+    }
+    
+    return false
   }
   const octaves = 1
   const whiteKeysPerOctave = 7 // C, D, E, F, G, A, B
