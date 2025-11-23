@@ -1,125 +1,9 @@
 {
   "id": "default",
-<<<<<<< HEAD
-  "references": [],
-  "createdAt": "2025-11-23T10:42:12.998Z",
-  "updatedAt": "2025-11-23T10:47:17.000Z",
-  "genre": "Electronic Dance",
-  "mood": "Energetic",
-  "instruments": [
-    "Synths"
-=======
   "references": [
     {
       "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763890943570-Love Songs (Bonus).mp3.wav",
-      "bpm": 110.31187926153204,
-      "key": "F",
-      "scale": "major",
-      "strength": 0.9093865752220154,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763891140054-Love Songs (Bonus).mp3.wav",
-      "bpm": 110.31187926153204,
-      "key": "F",
-      "scale": "major",
-      "strength": 0.9093865752220154,
-      "energySegments": [],
-      "genres": [
-        "dance",
-        "indie",
-        "alternative",
-        "metal",
-        "classic rock"
-      ],
-      "moods": [
-        "beautiful"
-      ]
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763892210899-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763892659364-Love Songs (Bonus).mp3.wav",
-      "bpm": 110.31187926153204,
-      "key": "F",
-      "scale": "major",
-      "strength": 0.9093865752220154,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763892783578-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763892962615-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763893207138-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763893874339-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763893920117-Hudson Mohawke - Cbat.mp3.wav",
-      "bpm": 89.0424722358626,
-      "key": "C",
-      "scale": "minor",
-      "strength": 0.6944465637207031,
-      "energySegments": [],
-      "genres": [],
-      "moods": []
-    },
-    {
-      "id": "ref-1",
-      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763894104107-Love Songs (Bonus).mp3.wav",
+      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763896302221-Love Songs (Bonus).mp3.wav",
       "bpm": 110.31187926153204,
       "key": "F",
       "scale": "major",
@@ -129,53 +13,64 @@
       "moods": []
     }
   ],
-  "createdAt": "2025-11-23T09:41:39.238Z",
-  "updatedAt": "2025-11-23T10:35:06.619Z",
-  "mood": "Romantic",
-  "genre": "Alternative",
+  "createdAt": "2025-11-23T11:11:42.640Z",
+  "updatedAt": "2025-11-23T11:13:25.097Z",
   "aggregate": {
-    "bpm": 98,
-    "key": "C",
-    "scale": "minor",
+    "bpm": 110,
+    "key": "F",
+    "scale": "major",
     "bpmRange": [
-      89.0424722358626,
+      110.31187926153204,
       110.31187926153204
     ],
     "keysConsidered": [
-      "F_major",
-      "C_minor"
+      "F_major"
     ],
-    "genres": [
-      "dance",
-      "indie",
-      "alternative",
-      "metal",
-      "classic rock"
-    ],
-    "moods": [
-      "beautiful"
-    ]
+    "genres": [],
+    "moods": []
   },
-  "bpm": 98,
-  "key": "C",
-  "scale": "minor",
+  "bpm": 110,
+  "key": "F",
+  "scale": "major",
   "instruments": [
     "Drums",
     "Bass Guitar",
-    "Electric Piano",
+    "Piano",
     "Strings",
-    "Electric Guitar",
-    "Synthesizer"
->>>>>>> 216aa04 (finishing touches)
+    "Acoustic Guitar"
   ],
-  "bpm": 135,
-  "key": "A minor",
   "chordProgression": {
     "global": [
-      "Am",
-      "G",
-      "C",
-      "F"
-    ]
-  }
+      "Fmaj7",
+      "Dm7",
+      "Bbmaj7",
+      "C7"
+    ],
+    "bySection": {
+      "intro": [
+        "Fmaj7",
+        "Gm7"
+      ],
+      "verse": [
+        "Fmaj7",
+        "Dm7",
+        "Bbmaj7",
+        "C7"
+      ],
+      "chorus": [
+        "Fmaj7",
+        "Dm7",
+        "Bbmaj7",
+        "C7"
+      ],
+      "bridge": [
+        "Bbmaj7",
+        "Am7",
+        "Gm7",
+        "C7"
+      ]
+    }
+  },
+  "genre": "pop",
+  "mood": "happy"
 }
