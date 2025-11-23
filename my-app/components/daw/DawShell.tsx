@@ -232,23 +232,21 @@ export default function DawShell() {
       setTracks((prev) =>
         prev.map((track) => {
           if (track.id === trackId && track.type === 'midi') {
-            // Update the track with the new sampler URL (convert null to undefined)
+            // Update the track with the new sampler URL and set to sampler mode
             const updatedTrack: Track = {
               ...track,
+              instrumentMode: 'sampler', // Ensure sampler mode is set
               samplerAudioUrl: audioPath ?? undefined,
+              synthPreset: undefined, // Clear synth preset when using sampler
             };
 
             // Update the MIDI part to use the sampler
             if (track.midiClips) {
-              const synthPreset =
-                track.instrumentMode === 'synth'
-                  ? track.synthPreset
-                  : undefined;
               updateMidiParts(
                 trackId,
                 track.midiClips,
                 audioPath ?? undefined,
-                synthPreset
+                undefined // No synth preset when using sampler
               );
             }
 
@@ -325,12 +323,68 @@ export default function DawShell() {
     [tracks]
   );
 
+  const handleSetInstrumentMode = useCallback(
+    (trackId: string, mode: 'synth' | 'sampler') => {
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id === trackId && track.type === 'midi') {
+            const updatedTrack: Track = {
+              ...track,
+              instrumentMode: mode,
+              // Clear the other mode's settings when switching
+              synthPreset: mode === 'synth' ? track.synthPreset : undefined,
+              samplerAudioUrl:
+                mode === 'sampler' ? track.samplerAudioUrl : undefined,
+            };
+
+            return updatedTrack;
+          }
+          return track;
+        })
+      );
+    },
+    []
+  );
+
+  const handleSetSynthPreset = useCallback(
+    (trackId: string, presetName: string) => {
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id === trackId && track.type === 'midi') {
+            const updatedTrack: Track = {
+              ...track,
+              instrumentMode: 'synth', // Ensure synth mode is set
+              synthPreset: presetName,
+              samplerAudioUrl: undefined, // Clear sampler when using synth
+            };
+
+            // Re-initialize the audio engine with new preset
+            if (track.midiClips) {
+              updateMidiParts(trackId, track.midiClips, undefined, presetName);
+            }
+
+            return updatedTrack;
+          }
+          return track;
+        })
+      );
+    },
+    []
+  );
+
   // Handle AI assistant actions
   const handleAIAssistantActions = useCallback(
     async (response: DAWAssistantResponse) => {
       if (!response.success || response.actions.length === 0) return;
 
+      // Keep track of newly created tracks by name -> id mapping
+      const trackNameToId = new Map<string, string>();
+
+      // Process actions sequentially with proper state updates
       for (const action of response.actions) {
+        // Add a small delay to ensure state updates are processed
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
         switch (action.type) {
           case 'create_track':
             if (action.trackType) {
@@ -342,8 +396,9 @@ export default function DawShell() {
                   action.trackType === 'midi' ? 'Synth' : 'Audio'
                 } ${trackNumber}`;
 
+              const trackId = crypto.randomUUID();
               const newTrack: Track = {
-                id: crypto.randomUUID(),
+                id: trackId,
                 name: trackName,
                 color: trackColors[colorIndex],
                 type: action.trackType,
@@ -351,15 +406,23 @@ export default function DawShell() {
                 solo: false,
                 volume: 1,
                 ...(action.trackType === 'midi'
-                  ? { midiClips: [createEmptyMidiClip()] }
+                  ? {
+                      midiClips: [createEmptyMidiClip()],
+                      instrumentMode: null, // Explicitly set to null so user/AI can configure
+                      synthPreset: undefined,
+                      samplerAudioUrl: undefined,
+                    }
                   : { audioClips: [] }),
               };
+
+              // Store the mapping of track name to ID for subsequent actions
+              trackNameToId.set(trackName, trackId);
 
               setTracks((prev) => [...prev, newTrack]);
 
               // Initialize MIDI part if it's a MIDI track
               if (action.trackType === 'midi' && newTrack.midiClips) {
-                updateMidiParts(newTrack.id, newTrack.midiClips);
+                updateMidiParts(trackId, newTrack.midiClips);
               }
 
               console.log(`✓ Created ${action.trackType} track: ${trackName}`);
@@ -396,16 +459,74 @@ export default function DawShell() {
             break;
 
           case 'select_instrument':
-            const trackForInstrument = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
-            );
-            if (trackForInstrument && action.instrumentPath) {
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForInstrument = action.trackId;
+            if (!trackIdForInstrument && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForInstrument = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForInstrument) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForInstrument = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForInstrument && action.instrumentPath) {
               handleAttachSampleToMidiTrack(
-                trackForInstrument.id,
+                trackIdForInstrument,
                 action.instrumentPath
               );
               console.log(
-                `✓ Set instrument for ${trackForInstrument.name}: ${action.instrumentPath}`
+                `✓ Set instrument for ${action.trackName}: ${action.instrumentPath}`
+              );
+            }
+            break;
+
+          case 'set_instrument_mode':
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForMode = action.trackId;
+            if (!trackIdForMode && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForMode = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForMode) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForMode = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForMode && action.instrumentMode) {
+              handleSetInstrumentMode(trackIdForMode, action.instrumentMode);
+              console.log(
+                `✓ Set instrument mode for ${action.trackName}: ${action.instrumentMode}`
+              );
+            }
+            break;
+
+          case 'set_synth_preset':
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForPreset = action.trackId;
+            if (!trackIdForPreset && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForPreset = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForPreset) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForPreset = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForPreset && action.synthPreset) {
+              // Trust that AI sent correct sequence - will set mode if needed
+              handleSetSynthPreset(trackIdForPreset, action.synthPreset);
+              console.log(
+                `✓ Set synth preset for ${action.trackName}: ${action.synthPreset}`
               );
             }
             break;
@@ -551,6 +672,8 @@ export default function DawShell() {
       handleVolumeChange,
       handleBpmChange,
       handleAttachSampleToMidiTrack,
+      handleSetInstrumentMode,
+      handleSetSynthPreset,
       handleToggleMute,
       handleToggleSolo,
       handleToggleMetronomeFromAI,
@@ -565,63 +688,6 @@ export default function DawShell() {
       )
     );
   }, []);
-
-  const handleSetInstrumentMode = useCallback(
-    (trackId: string, mode: 'synth' | 'sampler') => {
-      setTracks((prev) =>
-        prev.map((track) => {
-          if (track.id === trackId && track.type === 'midi') {
-            const updatedTrack: Track = {
-              ...track,
-              instrumentMode: mode,
-              synthPreset: mode === 'synth' ? 'piano' : undefined, // Default to piano preset
-            };
-
-            // Initialize the audio engine with the selected mode
-            if (track.midiClips) {
-              if (mode === 'synth') {
-                // Initialize synth mode with default piano preset
-                updateMidiParts(trackId, track.midiClips, undefined, 'piano');
-              }
-              // For sampler mode, we'll wait for the user to select a sample
-            }
-
-            return updatedTrack;
-          }
-          return track;
-        })
-      );
-    },
-    []
-  );
-
-  const handleSetSynthPreset = useCallback(
-    (trackId: string, presetName: string) => {
-      setTracks((prev) =>
-        prev.map((track) => {
-          if (
-            track.id === trackId &&
-            track.type === 'midi' &&
-            track.instrumentMode === 'synth'
-          ) {
-            const updatedTrack: Track = {
-              ...track,
-              synthPreset: presetName,
-            };
-
-            // Re-initialize the audio engine with new preset
-            if (track.midiClips) {
-              updateMidiParts(trackId, track.midiClips, undefined, presetName);
-            }
-
-            return updatedTrack;
-          }
-          return track;
-        })
-      );
-    },
-    []
-  );
 
   const handleRightMouseDown = useCallback(() => {
     setIsResizingRight(true);
@@ -715,6 +781,9 @@ export default function DawShell() {
                 volume: t.volume,
                 muted: t.muted,
                 solo: t.solo,
+                instrumentMode:
+                  t.type === 'midi' ? t.instrumentMode : undefined,
+                synthPreset: t.type === 'midi' ? t.synthPreset : undefined,
                 samplerAudioUrl: t.samplerAudioUrl ?? undefined,
               })),
               bpm,

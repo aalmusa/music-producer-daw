@@ -28,7 +28,12 @@ interface TimelineProps {
   setTrackHeight: React.Dispatch<React.SetStateAction<number>>;
 }
 
-export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeight }: TimelineProps) {
+export default function Timeline({
+  tracks,
+  setTracks,
+  trackHeight,
+  setTrackHeight,
+}: TimelineProps) {
   const measureCount = LOOP_BARS;
 
   const [playheadProgress, setPlayheadProgress] = useState(0);

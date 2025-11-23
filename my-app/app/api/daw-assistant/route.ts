@@ -1,22 +1,547 @@
 import type {
+  DAWAction,
   DAWAssistantRequest,
   DAWAssistantResponse,
-  DAWAction,
 } from '@/types/music-production';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
-// Initialize the LLM
+// Initialize the LLM with function calling
+// Lower temperature for more deterministic tool calling behavior
 const llm = new ChatGoogleGenerativeAI({
   model: 'gemini-2.5-flash',
   apiKey: process.env.GOOGLE_API_KEY,
-  temperature: 0.7,
+  temperature: 0.3, // Lower temperature for more consistent tool usage
 });
 
+// Define tools for the DAW assistant
+const createTrackWithInstrumentTool = new DynamicStructuredTool({
+  name: 'create_track_with_instrument',
+  description:
+    'Create a new MIDI track and configure it with a specific instrument. Use this when the user wants a track with a specific instrument like piano, bass, hi-hat, etc.',
+  schema: z.object({
+    trackName: z
+      .string()
+      .describe('Name for the track (e.g., "Piano", "Bass", "Hi-hat")'),
+    instrument: z
+      .enum(['piano', 'bass', 'lead', 'pad', 'bells', 'pluck', 'hihat', 'clap'])
+      .describe(
+        'Instrument type: piano, bass, lead (guitar), pad, bells, pluck (strings), hihat, clap'
+      ),
+  }),
+  func: async ({ trackName, instrument }) => {
+    // This is a placeholder - the actual execution happens in the frontend
+    // We return metadata that will be converted to actions
+    return JSON.stringify({
+      success: true,
+      trackName,
+      instrument,
+      actions: generateActionsForInstrument(trackName, instrument),
+    });
+  },
+});
+
+const createEmptyTrackTool = new DynamicStructuredTool({
+  name: 'create_empty_track',
+  description:
+    'Create a new MIDI track without configuring an instrument. Use this when you want to ask the user what instrument they want.',
+  schema: z.object({
+    trackName: z.string().describe('Name for the track'),
+  }),
+  func: async ({ trackName }) => {
+    return JSON.stringify({
+      success: true,
+      trackName,
+      actions: [
+        {
+          type: 'create_track',
+          trackType: 'midi',
+          trackName,
+          reasoning: 'Creating empty MIDI track for user to configure',
+        },
+      ],
+    });
+  },
+});
+
+const createAudioTrackTool = new DynamicStructuredTool({
+  name: 'create_audio_track',
+  description:
+    'Create a new audio track for audio files/loops. Use this when the user wants an audio track or when suggesting tracks that would benefit from audio samples (drums, vocals, recorded instruments, etc.).',
+  schema: z.object({
+    trackName: z
+      .string()
+      .describe(
+        'Name for the audio track (e.g., "Drums", "Vocals", "Guitar Loop")'
+      ),
+  }),
+  func: async ({ trackName }) => {
+    return JSON.stringify({
+      success: true,
+      trackName,
+      actions: [
+        {
+          type: 'create_track',
+          trackType: 'audio',
+          trackName,
+          reasoning: `Creating audio track for ${trackName}`,
+        },
+      ],
+    });
+  },
+});
+
+const suggestComprehensiveTracksTool = new DynamicStructuredTool({
+  name: 'suggest_comprehensive_tracks',
+  description:
+    'Generate a comprehensive list of 8-12 varied track suggestions for a music project. Use this when the user asks for track ideas, suggestions, or what tracks to create. This should include a good mix of MIDI tracks with different synth presets AND audio tracks.',
+  schema: z.object({
+    genre: z
+      .string()
+      .optional()
+      .describe(
+        'Music genre or style (e.g., "electronic", "hip-hop", "pop", "ambient")'
+      ),
+    includeAudio: z
+      .boolean()
+      .default(true)
+      .describe('Whether to include audio track suggestions'),
+    trackCount: z
+      .number()
+      .min(8)
+      .max(15)
+      .default(10)
+      .describe('Number of tracks to suggest (8-15, default 10)'),
+  }),
+  func: async ({ genre, includeAudio = true, trackCount = 10 }) => {
+    // Generate comprehensive track suggestions with variety
+    // Always aim for 8-12 tracks with good mix of MIDI (different synths) and audio
+    const suggestions: Array<{
+      type: 'midi' | 'audio';
+      name: string;
+      instrument?: string;
+      synthPreset?: string;
+    }> = [];
+
+    // Core rhythm section (always include)
+    suggestions.push(
+      { type: 'audio', name: 'Kick Drum' },
+      { type: 'audio', name: 'Drums' },
+      { type: 'midi', name: 'Bass', instrument: 'bass', synthPreset: 'bass' }
+    );
+
+    // Percussion variety
+    suggestions.push(
+      { type: 'midi', name: 'Hi-hat', instrument: 'hihat' },
+      { type: 'midi', name: 'Clap', instrument: 'clap' }
+    );
+
+    // Melodic elements with DIFFERENT synth presets (variety is key!)
+    suggestions.push(
+      {
+        type: 'midi',
+        name: 'Lead Synth',
+        instrument: 'lead',
+        synthPreset: 'lead',
+      },
+      { type: 'midi', name: 'Pad', instrument: 'pad', synthPreset: 'pad' },
+      {
+        type: 'midi',
+        name: 'Piano',
+        instrument: 'piano',
+        synthPreset: 'piano',
+      },
+      {
+        type: 'midi',
+        name: 'Strings',
+        instrument: 'pluck',
+        synthPreset: 'pluck',
+      },
+      { type: 'midi', name: 'Bells', instrument: 'bells', synthPreset: 'bells' }
+    );
+
+    // Additional audio tracks for variety
+    if (includeAudio) {
+      suggestions.push(
+        { type: 'audio', name: 'Vocals' },
+        { type: 'audio', name: 'FX' }
+      );
+    }
+
+    // Genre-specific additions
+    if (genre) {
+      const lowerGenre = genre.toLowerCase();
+      if (lowerGenre.includes('electronic') || lowerGenre.includes('edm')) {
+        suggestions.push(
+          {
+            type: 'midi',
+            name: 'Arp',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          },
+          {
+            type: 'midi',
+            name: 'Pluck',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          },
+          { type: 'audio', name: 'Riser' }
+        );
+      } else if (lowerGenre.includes('hip-hop') || lowerGenre.includes('rap')) {
+        suggestions.push(
+          { type: 'audio', name: 'Vocal Samples' },
+          {
+            type: 'midi',
+            name: '808',
+            instrument: 'bass',
+            synthPreset: 'bass',
+          },
+          { type: 'audio', name: 'Snare' }
+        );
+      } else if (lowerGenre.includes('pop')) {
+        suggestions.push(
+          { type: 'audio', name: 'Acoustic Guitar' },
+          {
+            type: 'midi',
+            name: 'Synth Chords',
+            instrument: 'pad',
+            synthPreset: 'pad',
+          },
+          { type: 'audio', name: 'Percussion' }
+        );
+      } else if (lowerGenre.includes('ambient')) {
+        suggestions.push(
+          {
+            type: 'midi',
+            name: 'Atmosphere',
+            instrument: 'pad',
+            synthPreset: 'pad',
+          },
+          { type: 'audio', name: 'Field Recording' },
+          {
+            type: 'midi',
+            name: 'Texture',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          }
+        );
+      }
+    }
+
+    // Ensure we have at least trackCount suggestions, fill with more variety if needed
+    while (suggestions.length < trackCount) {
+      const additionalTracks = [
+        {
+          type: 'midi' as const,
+          name: 'Synth 2',
+          instrument: 'lead',
+          synthPreset: 'lead',
+        },
+        {
+          type: 'midi' as const,
+          name: 'Pad 2',
+          instrument: 'pad',
+          synthPreset: 'pad',
+        },
+        { type: 'audio' as const, name: 'Sample' },
+        {
+          type: 'midi' as const,
+          name: 'Pluck',
+          instrument: 'pluck',
+          synthPreset: 'pluck',
+        },
+        { type: 'audio' as const, name: 'Loop' },
+      ];
+      suggestions.push(
+        ...additionalTracks.slice(0, trackCount - suggestions.length)
+      );
+    }
+
+    // Trim to requested count (but ensure minimum variety)
+    const finalSuggestions = suggestions.slice(0, Math.max(trackCount, 8));
+
+    // Convert to actions
+    const actions: DAWAction[] = [];
+    for (const suggestion of finalSuggestions) {
+      if (suggestion.type === 'audio') {
+        actions.push({
+          type: 'create_track',
+          trackType: 'audio',
+          trackName: suggestion.name,
+          reasoning: `Suggested audio track: ${suggestion.name}`,
+        });
+      } else {
+        // MIDI track with instrument
+        const instrumentActions = generateActionsForInstrument(
+          suggestion.name,
+          suggestion.instrument || 'piano'
+        );
+        actions.push(...instrumentActions);
+      }
+    }
+
+    return JSON.stringify({
+      success: true,
+      suggestions: finalSuggestions,
+      actions,
+      message: `Here's a comprehensive track setup with ${finalSuggestions.length} tracks including a mix of MIDI synths and audio tracks!`,
+    });
+  },
+});
+
+const adjustBpmTool = new DynamicStructuredTool({
+  name: 'adjust_bpm',
+  description: 'Change the project tempo/BPM',
+  schema: z.object({
+    bpm: z.number().min(40).max(240).describe('New BPM value (40-240)'),
+  }),
+  func: async ({ bpm }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'adjust_bpm',
+          bpm,
+          reasoning: `Setting BPM to ${bpm}`,
+        },
+      ],
+    });
+  },
+});
+
+const adjustVolumeTool = new DynamicStructuredTool({
+  name: 'adjust_volume',
+  description: 'Adjust the volume of a specific track',
+  schema: z.object({
+    trackName: z.string().describe('Name of the track to adjust'),
+    volume: z
+      .number()
+      .min(0)
+      .max(1)
+      .describe('Volume level from 0 to 1 (0% to 100%)'),
+  }),
+  func: async ({ trackName, volume }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'adjust_volume',
+          trackName,
+          volume,
+          reasoning: `Adjusting ${trackName} volume to ${Math.round(
+            volume * 100
+          )}%`,
+        },
+      ],
+    });
+  },
+});
+
+const deleteTrackTool = new DynamicStructuredTool({
+  name: 'delete_track',
+  description: 'Delete an existing track',
+  schema: z.object({
+    trackName: z.string().describe('Name of the track to delete'),
+  }),
+  func: async ({ trackName }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'delete_track',
+          trackName,
+          reasoning: `Deleting track ${trackName}`,
+        },
+      ],
+    });
+  },
+});
+
+const muteTracksTool = new DynamicStructuredTool({
+  name: 'mute_tracks',
+  description: 'Mute one or more tracks by name or pattern',
+  schema: z.object({
+    pattern: z
+      .string()
+      .describe(
+        'Track name or pattern to match (e.g., "drum" matches all drum tracks)'
+      ),
+  }),
+  func: async ({ pattern }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'mute_tracks',
+          trackPattern: pattern,
+          reasoning: `Muting tracks matching "${pattern}"`,
+        },
+      ],
+    });
+  },
+});
+
+const unmuteTracksTool = new DynamicStructuredTool({
+  name: 'unmute_tracks',
+  description: 'Unmute one or more tracks by name or pattern',
+  schema: z.object({
+    pattern: z.string().describe('Track name or pattern to match'),
+  }),
+  func: async ({ pattern }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'unmute_tracks',
+          trackPattern: pattern,
+          reasoning: `Unmuting tracks matching "${pattern}"`,
+        },
+      ],
+    });
+  },
+});
+
+const toggleMetronomeTool = new DynamicStructuredTool({
+  name: 'toggle_metronome',
+  description: 'Turn the metronome on or off',
+  schema: z.object({
+    enabled: z.boolean().describe('True to turn on, false to turn off'),
+  }),
+  func: async ({ enabled }) => {
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'toggle_metronome',
+          metronomeEnabled: enabled,
+          reasoning: `${enabled ? 'Enabling' : 'Disabling'} metronome`,
+        },
+      ],
+    });
+  },
+});
+
+// Helper function to generate actions for a specific instrument
+function generateActionsForInstrument(
+  trackName: string,
+  instrument: string
+): DAWAction[] {
+  const actions: DAWAction[] = [];
+
+  // Create track
+  actions.push({
+    type: 'create_track',
+    trackType: 'midi',
+    trackName,
+    reasoning: `Creating MIDI track for ${instrument}`,
+  });
+
+  // Configure based on instrument type
+  if (instrument === 'hihat' || instrument === 'clap') {
+    // Sampler instruments
+    actions.push({
+      type: 'set_instrument_mode',
+      trackName,
+      instrumentMode: 'sampler',
+      reasoning: `Setting ${trackName} to sampler mode`,
+    });
+
+    const audioPath =
+      instrument === 'hihat' ? '/audio/hihat.wav' : '/audio/clap.wav';
+    actions.push({
+      type: 'select_instrument',
+      trackName,
+      instrumentPath: audioPath,
+      reasoning: `Loading ${instrument} sample`,
+    });
+  } else {
+    // Synth instruments
+    actions.push({
+      type: 'set_instrument_mode',
+      trackName,
+      instrumentMode: 'synth',
+      reasoning: `Setting ${trackName} to synth mode`,
+    });
+
+    actions.push({
+      type: 'set_synth_preset',
+      trackName,
+      synthPreset: instrument,
+      reasoning: `Applying ${instrument} preset`,
+    });
+  }
+
+  return actions;
+}
+
+const tools = [
+  createTrackWithInstrumentTool,
+  createEmptyTrackTool,
+  createAudioTrackTool,
+  suggestComprehensiveTracksTool,
+  adjustBpmTool,
+  adjustVolumeTool,
+  deleteTrackTool,
+  muteTracksTool,
+  unmuteTracksTool,
+  toggleMetronomeTool,
+];
+
 /**
- * DAW Assistant Agent
- * 
+ * Detect if user message is requesting an action (vs just asking a question)
+ */
+function isActionRequest(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+
+  // Exclude question/suggestion requests
+  const questionKeywords = [
+    'what',
+    'suggest',
+    'ideas',
+    'recommend',
+    'should i',
+    'what should',
+    'give me ideas',
+    'what tracks',
+    'list',
+    'show me',
+  ];
+
+  // If it's clearly a question/suggestion request, don't treat as action
+  if (questionKeywords.some((keyword) => lowerMessage.includes(keyword))) {
+    return false;
+  }
+
+  const actionKeywords = [
+    'create',
+    'add',
+    'make',
+    'set',
+    'adjust',
+    'change',
+    'delete',
+    'remove',
+    'mute',
+    'unmute',
+    'solo',
+    'turn on',
+    'turn off',
+    'enable',
+    'disable',
+    'build',
+    'generate',
+    'put',
+    'place',
+  ];
+  return actionKeywords.some((keyword) => lowerMessage.includes(keyword));
+}
+
+/**
+ * DAW Assistant Agent with Tool Calling
+ *
  * This agent helps users with their DAW workflow by:
  * - Creating and deleting tracks (MIDI and audio)
  * - Adjusting track volumes
@@ -27,11 +552,26 @@ const llm = new ChatGoogleGenerativeAI({
 async function dawAssistantAgent(
   message: string,
   dawState: DAWAssistantRequest['dawState'],
-  userContext?: string
+  userContext?: string,
+  retryCount = 0
 ): Promise<DAWAssistantResponse> {
   try {
     // Build the system prompt with current DAW state
-    const systemPrompt = `You are an expert music production assistant integrated into a Digital Audio Workstation (DAW). Your role is to help users create and organize their music projects.
+    const isAction = isActionRequest(message);
+    const actionEmphasis = isAction
+      ? `\n⚠️ CRITICAL: The user is requesting an ACTION. You MUST call the appropriate tool(s) to perform the action. DO NOT just describe what you will do - actually call the tool(s) now!\n`
+      : '';
+
+    const systemPrompt = `You are an expert music production assistant integrated into a Digital Audio Workstation (DAW). 
+Your primary job is to PERFORM ACTIONS when users request them, not just describe what you would do.
+
+${actionEmphasis}
+
+**CRITICAL RULES:**
+1. When a user requests an action (create, add, make, set, adjust, delete, mute, etc.), you MUST call the appropriate tool(s) immediately
+2. DO NOT respond with text like "I'll create a track" - instead, CALL THE TOOL to actually create it
+3. Only provide conversational responses when the user is asking questions or seeking advice
+4. If you're unsure which tool to use, choose the most appropriate one based on the user's intent
 
 **Current DAW State:**
 - BPM: ${dawState.bpm}
@@ -40,243 +580,201 @@ async function dawAssistantAgent(
 ${
   dawState.tracks.length > 0
     ? `- Tracks:\n${dawState.tracks
-        .map(
-          (t) =>
-            `  • ${t.name} (${t.type.toUpperCase()}) - Volume: ${(t.volume * 100).toFixed(0)}%, ${t.muted ? 'MUTED' : 'ACTIVE'}${t.solo ? ', SOLO' : ''}${t.type === 'midi' && t.samplerAudioUrl ? ` - Instrument: ${t.samplerAudioUrl}` : ''}`
-        )
+        .map((t) => {
+          let trackInfo = `  • ${t.name} (${t.type.toUpperCase()}) - Volume: ${(
+            t.volume * 100
+          ).toFixed(0)}%, ${t.muted ? 'MUTED' : 'ACTIVE'}${
+            t.solo ? ', SOLO' : ''
+          }`;
+          if (t.type === 'midi') {
+            if (t.instrumentMode === 'synth' && t.synthPreset) {
+              trackInfo += ` - Synth: ${t.synthPreset}`;
+            } else if (t.instrumentMode === 'sampler' && t.samplerAudioUrl) {
+              trackInfo += ` - Sampler: ${t.samplerAudioUrl}`;
+            } else if (t.instrumentMode === null) {
+              trackInfo += ` - ⚠️ NO INSTRUMENT SET`;
+            }
+          }
+          return trackInfo;
+        })
         .join('\n')}`
     : '- No tracks yet'
 }
 
 ${userContext ? `**User Context:** ${userContext}` : ''}
 
-**Your Capabilities:**
-1. **Create Tracks**: Add new MIDI or audio tracks
-2. **Delete Tracks**: Remove existing tracks by name or ID
-3. **Adjust Volume**: Set volume levels for specific tracks (0-1 range)
-4. **Adjust BPM**: Change the project tempo
-5. **Select Instruments**: For MIDI tracks, select sampler instruments (available: /audio/clap.wav, /audio/hihat.wav)
-6. **Mute/Unmute Tracks**: Mute or unmute specific tracks or multiple tracks matching a pattern
-7. **Solo/Unsolo Tracks**: Solo or unsolo specific tracks or multiple tracks matching a pattern
-8. **Toggle Metronome**: Turn the metronome on or off
-9. **Provide Guidance**: Suggest next steps and creative ideas
+**Available Tools (USE THESE TO PERFORM ACTIONS):**
+- create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap). USE THIS when user wants a track with a specific instrument.
+- create_empty_track: Create an empty MIDI track (when you want to ask user what instrument they want)
+- create_audio_track: Create an audio track for audio files/loops. USE THIS when user wants an audio track or for drums, vocals, recorded instruments.
+- suggest_comprehensive_tracks: Generate a comprehensive list of 8-12 varied track suggestions. USE THIS when user asks for track ideas, suggestions, or "what tracks should I create". This creates a full, varied track setup with different synth presets AND audio tracks.
+- adjust_bpm: Change the project tempo. USE THIS when user asks to change BPM or tempo.
+- adjust_volume: Adjust volume of a specific track. USE THIS when user wants to change track volume.
+- delete_track: Delete a track. USE THIS when user wants to remove a track.
+- mute_tracks: Mute tracks by pattern. USE THIS when user wants to mute tracks.
+- unmute_tracks: Unmute tracks by pattern. USE THIS when user wants to unmute tracks.
+- toggle_metronome: Turn metronome on/off. USE THIS when user wants to enable/disable metronome.
 
-**Available Instruments for MIDI tracks:**
-- /audio/clap.wav - Clap sound
-- /audio/hihat.wav - Hi-hat sound
-- (Or leave as synth by not specifying an instrument)
+**Instrument Mapping:**
+- Piano, Keyboard → instrument: "piano"
+- Bass, Sub Bass, Kick Drum → instrument: "bass"
+- Guitar (lead), Lead → instrument: "lead"
+- Pad, Atmosphere → instrument: "pad"
+- Bells, Chimes → instrument: "bells"
+- Strings, Pluck → instrument: "pluck"
+- Hi-hat → instrument: "hihat"
+- Clap → instrument: "clap"
 
-**Action Types:**
-- create_track: Create a new track
-- delete_track: Delete an existing track
-- adjust_volume: Change track volume
-- adjust_bpm: Change project BPM
-- select_instrument: Set a sampler instrument for a MIDI track
-- mute_tracks: Mute one or more tracks (can use trackPattern to match multiple, e.g., "drum" matches "Drums", "Hi-hat", "Kick")
-- unmute_tracks: Unmute one or more tracks (can use trackPattern to match multiple)
-- solo_tracks: Solo one or more tracks (can use trackPattern to match multiple)
-- unsolo_tracks: Unsolo one or more tracks (can use trackPattern to match multiple)
-- toggle_metronome: Turn metronome on or off
-- none: Just provide guidance/conversation
+**Examples of CORRECT behavior:**
+- User: "Create a piano track" → You MUST call create_track_with_instrument with trackName="Piano", instrument="piano"
+- User: "Add a bass track" → You MUST call create_track_with_instrument with trackName="Bass", instrument="bass"
+- User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
+- User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
+- User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
 
-**Important Guidelines:**
-- Be conversational and helpful
-- When creating tracks, suggest appropriate names based on the instrument or purpose
-- When adjusting volumes, consider mixing best practices
-- When muting/soloing, you can use trackPattern to match multiple tracks (e.g., "drum" matches "Drums", "Hi-hat", "Kick")
-- For pattern matching: case-insensitive partial matches work (e.g., "bass" matches "Bass", "Sub Bass", "Bass Synth")
-- Provide 2-3 creative suggestions for next steps
-- If the user's request is unclear, ask for clarification
-- You can perform multiple actions at once (e.g., mute drums AND unmute bass)
+**Examples of INCORRECT behavior (DO NOT DO THIS):**
+- User: "Create a piano track" → ❌ WRONG: "I'll create a piano track for you" (without calling tool)
+- User: "Add a bass track" → ❌ WRONG: "Sure, I can add a bass track" (without calling tool)
 
-**Response Format (JSON):**
-{
-  "message": "Your conversational response to the user",
-  "actions": [
-    {
-      "type": "action_type",
-      "reasoning": "Why you're taking this action",
-      // Include relevant fields based on action type:
-      // For create_track: trackType, trackName
-      // For delete_track: trackId or trackName
-      // For adjust_volume: trackId or trackName, volume
-      // For adjust_bpm: bpm
-      // For select_instrument: trackId or trackName, instrumentPath
-      // For mute_tracks: trackId or trackName or trackPattern (for multiple)
-      // For unmute_tracks: trackId or trackName or trackPattern (for multiple)
-      // For solo_tracks: trackId or trackName or trackPattern (for multiple)
-      // For unsolo_tracks: trackId or trackName or trackPattern (for multiple)
-      // For toggle_metronome: metronomeEnabled (true/false)
-    }
-  ],
-  "suggestions": [
-    "Suggestion 1 for what to do next",
-    "Suggestion 2 for what to do next",
-    "Suggestion 3 for what to do next"
-  ]
-}
+**Guidelines:**
+- When user requests specific instruments, use create_track_with_instrument tool multiple times (once per track)
+- When user asks for track ideas, suggestions, or "what tracks should I create", ALWAYS use suggest_comprehensive_tracks tool to generate 8-12 varied tracks
+- The suggest_comprehensive_tracks tool should create a MIX of:
+  * MIDI tracks with DIFFERENT synth presets (piano, bass, lead, pad, bells, pluck) - NOT all the same!
+  * Audio tracks (drums, vocals, recorded instruments)
+  * Variety is key - don't suggest 4 similar tracks, suggest 8-12 with different instruments and types
+- For house beats, typically use: kick (bass), bass, hihat, clap, and set BPM to 120-128
+- Be conversational in your text response AFTER calling tools, but ALWAYS call tools first for action requests
+- If user doesn't specify instrument, use create_empty_track and ask them what they want
+- When suggesting tracks, always aim for comprehensive variety: different synth types, audio tracks, percussion, melodic elements
 
-**Examples:**
+**Track Suggestion Examples:**
+- User: "What tracks should I create?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Give me track ideas" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Suggest some tracks" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "What should I add?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
 
-User: "Add a drum track"
-Response:
-{
-  "message": "I'll create a MIDI drum track for you. I'm setting it up with a hi-hat sample to get you started.",
-  "actions": [
-    {
-      "type": "create_track",
-      "trackType": "midi",
-      "trackName": "Drums",
-      "reasoning": "Creating a MIDI track for drums as requested by the user"
-    },
-    {
-      "type": "select_instrument",
-      "trackName": "Drums",
-      "instrumentPath": "/audio/hihat.wav",
-      "reasoning": "Setting up hi-hat sample for the drum track"
-    }
-  ],
-  "suggestions": [
-    "Add a bass line to create a rhythm section",
-    "Create a melody track with a synth",
-    "Adjust the BPM to match your desired tempo"
-  ]
-}
+Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
-User: "Make the bass louder"
-Response:
-{
-  "message": "I've increased the bass track volume to 90%. That should give it more presence in the mix.",
-  "actions": [
-    {
-      "type": "adjust_volume",
-      "trackName": "Bass",
-      "volume": 0.9,
-      "reasoning": "Increasing bass volume as requested for better presence in the mix"
-    }
-  ],
-  "suggestions": [
-    "Consider adding compression to control the bass dynamics",
-    "Try adding a sub-bass layer for more depth",
-    "Adjust other track volumes to maintain a balanced mix"
-  ]
-}
-
-User: "Mute all the drum tracks"
-Response:
-{
-  "message": "I've muted all drum-related tracks. This includes Drums, Hi-hat, and Kick tracks.",
-  "actions": [
-    {
-      "type": "mute_tracks",
-      "trackPattern": "drum",
-      "reasoning": "Muting all tracks that contain 'drum' in their name to isolate other elements"
-    }
-  ],
-  "suggestions": [
-    "Listen to how the bass and melody sound without drums",
-    "Unmute drums when you're ready to add them back",
-    "Try soloing just the bass to hear it clearly"
-  ]
-}
-
-User: "Solo the bass"
-Response:
-{
-  "message": "I've soloed the bass track so you can hear it in isolation.",
-  "actions": [
-    {
-      "type": "solo_tracks",
-      "trackName": "Bass",
-      "reasoning": "Soloing bass track to allow focused listening and editing"
-    }
-  ],
-  "suggestions": [
-    "Check if the bass needs EQ adjustments",
-    "Listen for any timing issues",
-    "Unsolo when done to hear it in the mix"
-  ]
-}
-
-User: "Turn on the metronome"
-Response:
-{
-  "message": "I've enabled the metronome. You'll hear it clicking on each beat when you play.",
-  "actions": [
-    {
-      "type": "toggle_metronome",
-      "metronomeEnabled": true,
-      "reasoning": "Enabling metronome to help with timing and tempo reference"
-    }
-  ],
-  "suggestions": [
-    "Use the metronome to stay in time while recording",
-    "Turn it off once you're comfortable with the tempo",
-    "Adjust BPM if the tempo doesn't feel right"
-  ]
-}
-
-Now respond to the user's message below.`;
+    // Bind tools to the LLM
+    const llmWithTools = llm.bindTools(tools);
 
     const messages = [
       new SystemMessage(systemPrompt),
       new HumanMessage(message),
     ];
 
-    console.log('🎵 DAW Assistant analyzing request...');
-    const agentResponse = await llm.invoke(messages);
-    const agentContent = String(agentResponse.content);
+    console.log('🎵 DAW Assistant with tools analyzing request...');
+    const response = await llmWithTools.invoke(messages);
 
-    // Parse the agent's JSON response
-    let agentDecision: {
-      message: string;
-      actions: DAWAction[];
-      suggestions?: string[];
-    };
+    // Extract tool calls and text response
+    const toolCalls = response.tool_calls || [];
 
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = agentContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        agentDecision = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
-      }
-    } catch (parseError) {
-      console.error('Failed to parse agent response:', agentContent);
-      console.error('Parse error:', parseError);
-      
-      // Fallback: provide a helpful message
-      return {
-        success: true,
-        message: agentContent || "I'm here to help! You can ask me to create tracks, adjust volumes, set BPM, or get suggestions for your production.",
-        actions: [
-          {
-            type: 'none',
-            reasoning: 'Unable to parse structured response, providing conversational guidance',
-          },
-        ],
-        suggestions: [
-          'Try asking me to "create a new MIDI track"',
-          'Ask me to "adjust the BPM to 128"',
-          'Request "suggestions for what to add next"',
-        ],
-      };
+    // Handle content properly - it might be a string or array
+    let textResponse = '';
+    if (typeof response.content === 'string') {
+      textResponse = response.content;
+    } else if (Array.isArray(response.content)) {
+      // If it's an array, join text parts
+      textResponse = response.content
+        .filter((item) => typeof item === 'string' || item.type === 'text')
+        .map((item) => (typeof item === 'string' ? item : item.text || ''))
+        .join(' ');
+    } else {
+      textResponse = String(response.content || '');
     }
 
-    console.log('🎹 DAW Assistant Decision:', agentDecision);
+    console.log('🎹 Tool calls:', toolCalls.length);
+    console.log('💬 Response:', textResponse.substring(0, 200));
 
-    // Validate actions
-    const validActions = agentDecision.actions.filter((action) => {
-      if (!action.type) return false;
-      return true;
-    });
+    let allActions: DAWAction[] = [];
+    let finalMessage = textResponse;
+    let suggestions: string[] = [];
+
+    // If we got tool calls, process them (preferred path)
+    if (toolCalls.length > 0) {
+      console.log('✅ Processing tool calls...');
+      for (const toolCall of toolCalls) {
+        try {
+          const tool = tools.find((t) => t.name === toolCall.name);
+          if (tool) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await tool.func(toolCall.args as any);
+            const parsed = JSON.parse(result);
+            if (parsed.actions) {
+              allActions.push(...parsed.actions);
+            }
+          }
+        } catch (error) {
+          console.error('Error executing tool:', toolCall.name, error);
+        }
+      }
+
+      suggestions = [
+        'Create more tracks',
+        'Adjust the BPM',
+        'Get mixing suggestions',
+      ];
+    } else if (textResponse.includes('{') && textResponse.includes('actions')) {
+      // Fallback: LLM generated JSON response instead of tool calls
+      console.log('⚠️ No tool calls, trying to parse JSON fallback...');
+      try {
+        const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          console.log('🎹 DAW Assistant Decision:', parsed);
+
+          if (parsed.actions && Array.isArray(parsed.actions)) {
+            allActions = parsed.actions;
+            finalMessage = parsed.message || textResponse;
+            suggestions = parsed.suggestions || [
+              'Create more tracks',
+              'Adjust the BPM',
+              'Get mixing suggestions',
+            ];
+            console.log(
+              '✅ Parsed fallback JSON with',
+              allActions.length,
+              'actions'
+            );
+          }
+        }
+      } catch (parseError) {
+        console.error('Failed to parse fallback JSON:', parseError);
+        finalMessage =
+          "I understood your request but couldn't format the response properly. Please try again.";
+      }
+    } else {
+      // No tool calls and no JSON fallback
+      // Check if this was an action request - if so, retry with stronger prompt
+      if (isActionRequest(message) && retryCount === 0) {
+        console.log(
+          '⚠️ Action requested but no tools called. Retrying with stronger prompt...'
+        );
+        // Retry with a more explicit prompt
+        const retryPrompt = `${message}\n\nIMPORTANT: You must call the appropriate tool(s) to perform this action. Do not just describe what you will do - actually call the tool(s) now.`;
+        return dawAssistantAgent(retryPrompt, dawState, userContext, 1);
+      }
+
+      // Pure conversational response with no actions
+      suggestions = [
+        'Create more tracks',
+        'Adjust the BPM',
+        'Get mixing suggestions',
+      ];
+    }
+
+    console.log('✅ Final action count:', allActions.length);
 
     return {
       success: true,
-      message: agentDecision.message,
-      actions: validActions,
-      suggestions: agentDecision.suggestions,
+      message:
+        finalMessage ||
+        "I'm here to help with your DAW! You can ask me to create tracks, adjust settings, or get suggestions.",
+      actions: allActions,
+      suggestions,
     };
   } catch (error) {
     console.error('❌ DAW Assistant agent error:', error);
@@ -314,4 +812,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

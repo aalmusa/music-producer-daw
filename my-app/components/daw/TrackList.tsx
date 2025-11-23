@@ -35,9 +35,9 @@ export default function TrackList({
   const [samplerDropdownOpen, setSamplerDropdownOpen] = useState<string | null>(
     null
   );
-  const [synthPresetDropdownOpen, setSynthPresetDropdownOpen] = useState<string | null>(
-    null
-  );
+  const [synthPresetDropdownOpen, setSynthPresetDropdownOpen] = useState<
+    string | null
+  >(null);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
@@ -47,7 +47,10 @@ export default function TrackList({
   };
 
   const handleFinishRename = (trackId: string) => {
-    if (editingName.trim() && editingName !== tracks.find(t => t.id === trackId)?.name) {
+    if (
+      editingName.trim() &&
+      editingName !== tracks.find((t) => t.id === trackId)?.name
+    ) {
       onRenameTrack?.(trackId, editingName.trim());
     }
     setEditingTrackId(null);
@@ -77,7 +80,10 @@ export default function TrackList({
           return (
             <div key={track.id} className='border-b border-slate-800'>
               {/* Track Header */}
-              <div className='flex items-center px-3 text-sm' style={{ height: trackHeight }}>
+              <div
+                className='flex items-center px-3 text-sm'
+                style={{ height: trackHeight }}
+              >
                 <div className={`w-2 h-8 rounded-full mr-2 ${track.color}`} />
                 <div className='flex flex-col flex-1 min-w-0'>
                   <div className='flex items-center gap-2'>
@@ -110,12 +116,13 @@ export default function TrackList({
                     <span className='text-[8px] text-slate-500 uppercase'>
                       {track.type}
                     </span>
-                    {track.type === 'midi' && (
-                      track.instrumentMode === null ? (
+                    {track.type === 'midi' &&
+                      (track.instrumentMode === null ? (
                         <span className='text-[8px] bg-orange-600/30 text-orange-300 px-1.5 py-0.5 rounded animate-pulse'>
                           No Mode
                         </span>
-                      ) : track.instrumentMode === 'sampler' && currentSample ? (
+                      ) : track.instrumentMode === 'sampler' &&
+                        currentSample ? (
                         <span className='text-[8px] bg-emerald-600/30 text-emerald-300 px-1.5 py-0.5 rounded'>
                           Sample: {currentSample.name}
                         </span>
@@ -125,14 +132,22 @@ export default function TrackList({
                         </span>
                       ) : track.synthPreset ? (
                         <span className='text-[8px] bg-blue-600/30 text-blue-300 px-1.5 py-0.5 rounded'>
-                          {synthPresetList.find(p => p.name === track.synthPreset)?.icon} {synthPresetList.find(p => p.name === track.synthPreset)?.displayName}
+                          {
+                            synthPresetList.find(
+                              (p) => p.name === track.synthPreset
+                            )?.icon
+                          }{' '}
+                          {
+                            synthPresetList.find(
+                              (p) => p.name === track.synthPreset
+                            )?.displayName
+                          }
                         </span>
                       ) : (
                         <span className='text-[8px] bg-blue-600/30 text-blue-300 px-1.5 py-0.5 rounded'>
                           Synth
                         </span>
-                      )
-                    )}
+                      ))}
                   </div>
                   <div className='flex gap-1 mt-1 text-[10px] text-slate-400'>
                     <button
@@ -166,9 +181,7 @@ export default function TrackList({
                         className='px-1 py-0.5 rounded bg-slate-800 hover:bg-blue-600 transition-colors ml-auto'
                         onClick={(e) => {
                           e.stopPropagation();
-                          setExpandedTrackId(
-                            isExpanded ? null : track.id
-                          );
+                          setExpandedTrackId(isExpanded ? null : track.id);
                           setSamplerDropdownOpen(null);
                         }}
                         title='Sampler options'
@@ -202,13 +215,17 @@ export default function TrackList({
                       </div>
                       <div className='grid grid-cols-2 gap-2'>
                         <button
-                          onClick={() => onSetInstrumentMode?.(track.id, 'synth')}
+                          onClick={() =>
+                            onSetInstrumentMode?.(track.id, 'synth')
+                          }
                           className='px-3 py-2 text-xs bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 rounded border border-blue-600/30 hover:border-blue-500 transition-all'
                         >
                           � Synth
                         </button>
                         <button
-                          onClick={() => onSetInstrumentMode?.(track.id, 'sampler')}
+                          onClick={() =>
+                            onSetInstrumentMode?.(track.id, 'sampler')
+                          }
                           className='px-3 py-2 text-xs bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 rounded border border-emerald-600/30 hover:border-emerald-500 transition-all'
                         >
                           🎵 Sampler
@@ -223,21 +240,28 @@ export default function TrackList({
                       <div className='text-[10px] text-slate-400 px-1'>
                         🎹 Synth mode - select a preset:
                       </div>
-                      
+
                       {/* Synth Preset Selector */}
                       <div className='relative'>
                         <button
                           onClick={() =>
                             setSynthPresetDropdownOpen(
-                              synthPresetDropdownOpen === track.id ? null : track.id
+                              synthPresetDropdownOpen === track.id
+                                ? null
+                                : track.id
                             )
                           }
                           className='w-full px-2 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-left flex items-center justify-between'
                         >
                           <span>
-                            {track.synthPreset 
-                              ? synthPresetList.find(p => p.name === track.synthPreset)?.icon + ' ' + 
-                                synthPresetList.find(p => p.name === track.synthPreset)?.displayName
+                            {track.synthPreset
+                              ? synthPresetList.find(
+                                  (p) => p.name === track.synthPreset
+                                )?.icon +
+                                ' ' +
+                                synthPresetList.find(
+                                  (p) => p.name === track.synthPreset
+                                )?.displayName
                               : '🎹 Select preset...'}
                           </span>
                           <span className='text-[10px]'>
@@ -268,10 +292,16 @@ export default function TrackList({
                                   }`}
                                 >
                                   <div className='flex items-center gap-2'>
-                                    <span className='text-base'>{preset.icon}</span>
+                                    <span className='text-base'>
+                                      {preset.icon}
+                                    </span>
                                     <div>
-                                      <div className='font-medium'>{preset.displayName}</div>
-                                      <div className='text-[10px] text-slate-500'>{preset.description}</div>
+                                      <div className='font-medium'>
+                                        {preset.displayName}
+                                      </div>
+                                      <div className='text-[10px] text-slate-500'>
+                                        {preset.description}
+                                      </div>
                                     </div>
                                   </div>
                                 </button>
@@ -297,7 +327,7 @@ export default function TrackList({
                       <div className='text-[10px] text-slate-400 px-1'>
                         🎵 Sampler mode - select an audio sample:
                       </div>
-                      
+
                       {/* Sample Selector Dropdown */}
                       <div className='relative'>
                         <button
@@ -368,7 +398,7 @@ export default function TrackList({
       </div>
 
       {/* Add track button */}
-      <button 
+      <button
         onClick={() => onAddTrack?.()}
         className='h-10 text-xs text-slate-300 border-t border-slate-800 hover:bg-slate-800 transition-colors'
       >
