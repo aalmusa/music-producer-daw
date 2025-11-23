@@ -18,7 +18,8 @@ const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
 const samplerMap = new Map<string, Tone.Sampler>(); // Samplers for drum samples
 
-// Audio loop players for audio tracks (4-bar loops quantized to BPM)
+// Audio clip players for audio tracks (4-bar clips quantized to BPM, play once)
+// Key format: "trackId:clipId" to support multiple clips per track
 const audioPlayerMap = new Map<string, Tone.Player>();
 
 export async function initAudio() {
@@ -355,113 +356,175 @@ export function previewNote(
   synth.triggerAttackRelease(noteName, duration, undefined, velocity);
 }
 
-// ============ AUDIO LOOP PLAYER FUNCTIONS ============
+// ============ AUDIO CLIP PLAYER FUNCTIONS ============
 
 /**
- * Creates or updates an audio loop player for a track
- * Audio loops are quantized to 4 bars and sync with the transport BPM
+ * Creates or updates an audio clip player for a clip
+ * Audio clips are quantized to 4 bars, sync with the transport BPM, and play once (no looping)
  */
 export async function createAudioLoopPlayer(
   trackId: string,
-  audioUrl: string
+  clipId: string,
+  audioUrl: string,
+  startBar: number = 0
 ): Promise<Tone.Player> {
+  const playerKey = `${trackId}:${clipId}`;
+  
   // Remove existing player if it exists
-  const existingPlayer = audioPlayerMap.get(trackId);
+  const existingPlayer = audioPlayerMap.get(playerKey);
   if (existingPlayer) {
-    existingPlayer.stop();
+    existingPlayer.unsync();
+    // Only stop if player is actually started
+    if (existingPlayer.state === 'started') {
+      existingPlayer.stop();
+    }
     existingPlayer.dispose();
-    audioPlayerMap.delete(trackId);
+    audioPlayerMap.delete(playerKey);
   }
 
   return new Promise((resolve, reject) => {
-    // Create a new player with looping enabled
+    // Create a new player without looping (play once through 4 bars)
     const player = new Tone.Player({
       url: audioUrl,
-      loop: true,
+      loop: false,
       onload: () => {
-        // Calculate the duration of 4 bars at current BPM
-        const fourBarsDuration = transport.toSeconds('4m');
-        
-        // Set playback rate to fit the audio into exactly 4 bars
-        // This quantizes the loop to the project's BPM
-        const originalDuration = player.buffer.duration;
-        const playbackRate = originalDuration / fourBarsDuration;
-        player.playbackRate = playbackRate;
-        
-        // Set loop points to 4 bars
-        player.loopStart = 0;
-        player.loopEnd = fourBarsDuration;
-        
-        console.log(
-          `✓ Audio loop loaded for track ${trackId}:`,
-          `original=${originalDuration.toFixed(2)}s,`,
-          `4bars=${fourBarsDuration.toFixed(2)}s,`,
-          `rate=${playbackRate.toFixed(3)}`
-        );
-        
-        audioPlayerMap.set(trackId, player);
-        resolve(player);
+        try {
+          // Calculate the duration of 4 bars at current BPM
+          const fourBarsDuration = transport.toSeconds('4m');
+          
+          // Check if buffer is loaded
+          if (!player.buffer || !player.buffer.loaded) {
+            console.error('Buffer not loaded properly');
+            reject(new Error('Buffer not loaded'));
+            return;
+          }
+          
+          // Set playback rate to fit the audio into exactly 4 bars
+          // This quantizes the clip to the project's BPM
+          const originalDuration = player.buffer.duration;
+          const playbackRate = originalDuration / fourBarsDuration;
+          player.playbackRate = playbackRate;
+          
+          // Sync player with transport
+          // Start at the clip's position and stop after 4 bars
+          player.sync().start(`${startBar}m`).stop(`${startBar + 4}m`);
+          
+          // Store in map
+          audioPlayerMap.set(playerKey, player);
+          
+          console.log(
+            `✓ Audio clip loaded for clip ${clipId} on track ${trackId}:`,
+            `original=${originalDuration.toFixed(2)}s,`,
+            `4bars=${fourBarsDuration.toFixed(2)}s,`,
+            `rate=${playbackRate.toFixed(3)},`,
+            `startBar=${startBar}-${startBar + 4}`
+          );
+          
+          resolve(player);
+        } catch (error) {
+          console.error(`✗ Error setting up audio player:`, error);
+          reject(error);
+        }
       },
       onerror: (error) => {
-        console.error(`✗ Failed to load audio for track ${trackId}:`, error);
+        console.error(`✗ Failed to load audio for clip ${clipId}:`, error);
         reject(error);
       },
     }).toDestination();
-    
-    // Sync player with transport
-    player.sync().start(0);
   });
 }
 
 /**
- * Updates the playback rate of all audio loops when BPM changes
+ * Updates the playback rate of all audio clips when BPM changes
  */
 export function updateAudioLoopBpm() {
   const fourBarsDuration = transport.toSeconds('4m');
   
-  audioPlayerMap.forEach((player, trackId) => {
+  audioPlayerMap.forEach((player, playerKey) => {
     const originalDuration = player.buffer.duration;
     const playbackRate = originalDuration / fourBarsDuration;
     player.playbackRate = playbackRate;
-    player.loopEnd = fourBarsDuration;
     
     console.log(
-      `Updated loop rate for track ${trackId}: ${playbackRate.toFixed(3)}`
+      `Updated clip playback rate for ${playerKey}: ${playbackRate.toFixed(3)}`
     );
   });
 }
 
 /**
- * Removes an audio loop player
+ * Removes a specific audio clip player by clip ID
  */
-export function removeAudioLoopPlayer(trackId: string) {
-  const player = audioPlayerMap.get(trackId);
+export function removeAudioLoopPlayer(trackId: string, clipId: string) {
+  const playerKey = `${trackId}:${clipId}`;
+  const player = audioPlayerMap.get(playerKey);
   if (player) {
-    player.unsync();
-    player.stop();
-    player.dispose();
-    audioPlayerMap.delete(trackId);
+    try {
+      player.unsync();
+      // Only stop if player is actually started
+      if (player.state === 'started') {
+        player.stop();
+      }
+      player.dispose();
+      audioPlayerMap.delete(playerKey);
+      console.log(`✓ Removed audio clip player: ${playerKey}`);
+    } catch (error) {
+      console.error(`Error removing player ${playerKey}:`, error);
+      // Still delete from map even if there was an error
+      audioPlayerMap.delete(playerKey);
+    }
   }
 }
 
 /**
- * Sets volume for an audio loop player
+ * Removes all audio clip players for a track
+ */
+export function removeAllAudioLoopPlayers(trackId: string) {
+  const keysToRemove: string[] = [];
+  
+  audioPlayerMap.forEach((player, playerKey) => {
+    if (playerKey.startsWith(`${trackId}:`)) {
+      try {
+        player.unsync();
+        // Only stop if player is actually started
+        if (player.state === 'started') {
+          player.stop();
+        }
+        player.dispose();
+      } catch (error) {
+        console.error(`Error removing player ${playerKey}:`, error);
+      }
+      keysToRemove.push(playerKey);
+    }
+  });
+  
+  keysToRemove.forEach(key => audioPlayerMap.delete(key));
+  
+  if (keysToRemove.length > 0) {
+    console.log(`✓ Removed ${keysToRemove.length} audio clip player(s) for track ${trackId}`);
+  }
+}
+
+/**
+ * Sets volume for all audio clip players on a track
  */
 export function setAudioLoopVolume(trackId: string, volume: number) {
-  const player = audioPlayerMap.get(trackId);
-  if (player) {
-    // Convert 0-1 range to decibels (-24 to 0)
-    const db = volume === 0 ? -Infinity : (volume - 1) * 24;
-    player.volume.value = db;
-  }
+  // Convert 0-1 range to decibels (-24 to 0)
+  const db = volume === 0 ? -Infinity : (volume - 1) * 24;
+  
+  audioPlayerMap.forEach((player, playerKey) => {
+    if (playerKey.startsWith(`${trackId}:`)) {
+      player.volume.value = db;
+    }
+  });
 }
 
 /**
- * Mutes or unmutes an audio loop player
+ * Mutes or unmutes all audio clip players on a track
  */
 export function setAudioLoopMute(trackId: string, muted: boolean) {
-  const player = audioPlayerMap.get(trackId);
-  if (player) {
-    player.mute = muted;
-  }
+  audioPlayerMap.forEach((player, playerKey) => {
+    if (playerKey.startsWith(`${trackId}:`)) {
+      player.mute = muted;
+    }
+  });
 }

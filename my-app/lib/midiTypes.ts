@@ -16,6 +16,14 @@ export interface MidiClipData {
   color?: string; // Optional color for the clip
 }
 
+export interface AudioClipData {
+  id: string;
+  audioUrl: string;
+  bars: number; // Number of bars (4 for loops)
+  startBar: number; // Position in timeline (0-based)
+  name?: string;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -24,7 +32,9 @@ export interface Track {
   muted: boolean;
   solo: boolean;
   volume: number;
-  // For audio tracks
+  // For audio tracks - now supports multiple clips (4-bar loops)
+  audioClips?: AudioClipData[];
+  // Legacy: single audio URL (deprecated, use audioClips instead)
   audioUrl?: string;
   // For MIDI tracks - now supports multiple clips
   midiClips?: MidiClipData[];
@@ -87,6 +97,21 @@ export function createEmptyMidiClip(
     notes: [],
     bars,
     startBar,
+  };
+}
+
+// Create an audio clip (4-bar loop)
+export function createAudioClip(
+  audioUrl: string,
+  startBar: number = 0,
+  name?: string
+): AudioClipData {
+  return {
+    id: crypto.randomUUID(),
+    audioUrl,
+    bars: 4, // Always 4 bars for loops
+    startBar,
+    name,
   };
 }
 

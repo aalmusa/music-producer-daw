@@ -1,11 +1,17 @@
 'use client';
 
-import { getLoopProgress, LOOP_BARS, updateMidiParts } from '@/lib/audioEngine';
+import {
+  createAudioLoopPlayer,
+  getLoopProgress,
+  LOOP_BARS,
+  removeAudioLoopPlayer,
+  updateMidiParts,
+} from '@/lib/audioEngine';
 import { createEmptyMidiClip, MidiClipData, Track } from '@/lib/midiTypes';
 import { useEffect, useRef, useState } from 'react';
+import AudioClip from './AudioClip';
 import MidiClip from './MidiClip';
 import PianoRollModal from './PianoRollModal';
-import WaveformTrack from './WaveformTrack';
 
 interface TimelineProps {
   tracks: Track[];
@@ -22,6 +28,44 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
   const [pianoRollOpen, setPianoRollOpen] = useState(false);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+
+  // Track which clips have been initialized to avoid duplicates
+  const [initializedClips, setInitializedClips] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Initialize audio loop players for audio clips
+  useEffect(() => {
+    const newInitializedClips = new Set(initializedClips);
+
+    tracks.forEach((track) => {
+      if (track.type === 'audio' && track.audioClips) {
+        track.audioClips.forEach((clip) => {
+          const clipKey = `${track.id}:${clip.id}`;
+
+          // Only create player if not already initialized
+          if (!initializedClips.has(clipKey)) {
+            createAudioLoopPlayer(
+              track.id,
+              clip.id,
+              clip.audioUrl,
+              clip.startBar
+            )
+              .then(() => {
+                newInitializedClips.add(clipKey);
+                setInitializedClips(new Set(newInitializedClips));
+              })
+              .catch((error) => {
+                console.error(
+                  `Failed to create audio player for clip ${clip.id}:`,
+                  error
+                );
+              });
+          }
+        });
+      }
+    });
+  }, [tracks, initializedClips]);
 
   // Update MIDI clip for a track
   const handleUpdateMidiClip = (
@@ -60,7 +104,11 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
         );
 
         // Update the audio engine with repositioned clips, preserving sampler
-        updateMidiParts(trackId, updatedClips, track.samplerAudioUrl ?? undefined);
+        updateMidiParts(
+          trackId,
+          updatedClips,
+          track.samplerAudioUrl ?? undefined
+        );
 
         return { ...track, midiClips: updatedClips };
       })
@@ -79,7 +127,11 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
         const updatedClips = [...existingClips, newClip];
 
         // Update audio engine, preserving sampler
-        updateMidiParts(track.id, updatedClips, track.samplerAudioUrl ?? undefined);
+        updateMidiParts(
+          track.id,
+          updatedClips,
+          track.samplerAudioUrl ?? undefined
+        );
 
         return { ...track, midiClips: updatedClips };
       })
@@ -102,24 +154,97 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
         );
 
         // Update audio engine, preserving sampler
-        updateMidiParts(track.id, updatedClips, track.samplerAudioUrl ?? undefined);
+        updateMidiParts(
+          track.id,
+          updatedClips,
+          track.samplerAudioUrl ?? undefined
+        );
 
         return { ...track, midiClips: updatedClips };
       })
     );
   };
 
-  // Get all empty 4-bar slots for a track
+  // Move audio clip to new position
+  const handleMoveAudioClip = (
+    trackId: string,
+    clipId: string,
+    newStartBar: number
+  ) => {
+    // Remove old player
+    removeAudioLoopPlayer(trackId, clipId);
+
+    // Remove from initialized set so it can be recreated
+    const clipKey = `${trackId}:${clipId}`;
+    setInitializedClips((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(clipKey);
+      return newSet;
+    });
+
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trackId) return track;
+
+        const updatedClips = (track.audioClips || []).map((clip) => {
+          if (clip.id === clipId) {
+            return { ...clip, startBar: newStartBar };
+          }
+          return clip;
+        });
+
+        return { ...track, audioClips: updatedClips };
+      })
+    );
+  };
+
+  // Delete audio clip
+  const handleDeleteAudioClip = (trackId: string, clipId: string) => {
+    // Remove the audio player
+    removeAudioLoopPlayer(trackId, clipId);
+
+    // Remove from initialized clips set
+    const clipKey = `${trackId}:${clipId}`;
+    setInitializedClips((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(clipKey);
+      return newSet;
+    });
+
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trackId) return track;
+
+        const updatedClips = (track.audioClips || []).filter(
+          (clip) => clip.id !== clipId
+        );
+
+        return { ...track, audioClips: updatedClips };
+      })
+    );
+  };
+
+  // Get all empty 4-bar slots for a track (works for both MIDI and audio)
   const getEmptySlots = (trackId: string): number[] => {
     const track = tracks.find((t) => t.id === trackId);
     const emptySlots: number[] = [];
 
-    // Get occupied ranges
-    const occupiedRanges =
+    // Get occupied ranges from MIDI clips
+    const midiOccupiedRanges =
       track?.midiClips?.map((clip) => ({
         start: clip.startBar,
         end: clip.startBar + clip.bars,
       })) || [];
+
+    // Get occupied ranges from audio clips
+    const audioOccupiedRanges =
+      track?.audioClips?.map((clip) => ({
+        start: clip.startBar,
+        end: clip.startBar + clip.bars,
+      })) || [];
+
+    // Combine all occupied ranges
+    const occupiedRanges = [...midiOccupiedRanges, ...audioOccupiedRanges];
 
     // Check each 4-bar slot
     for (let bar = 0; bar < measureCount; bar += 4) {
@@ -248,20 +373,51 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
 
             {/* Content: Audio or MIDI clips */}
             <div className='relative h-full flex items-center'>
-              {track.type === 'audio' && track.audioUrl ? (
-                <div className='px-2 w-full'>
-                  <WaveformTrack trackId={track.id} fileUrl={track.audioUrl} label={track.name} />
-                </div>
+              {track.type === 'audio' ? (
+                <>
+                  {/* Render empty slot buttons for audio tracks */}
+                  {getEmptySlots(track.id).map((startBar) => {
+                    const slotLeftPercent = (startBar / measureCount) * 100;
+                    const slotWidthPercent = (4 / measureCount) * 100;
+
+                    return (
+                      <div
+                        key={`empty-audio-${startBar}`}
+                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 flex items-center justify-center text-slate-600 pointer-events-none'
+                        style={{
+                          left: `${slotLeftPercent}%`,
+                          width: `${slotWidthPercent}%`,
+                        }}
+                      >
+                        <span className='text-xs'>Empty Slot</span>
+                      </div>
+                    );
+                  })}
+
+                  {/* Render all audio clips */}
+                  {track.audioClips?.map((clip) => (
+                    <AudioClip
+                      key={clip.id}
+                      trackId={track.id}
+                      clipData={clip}
+                      totalBars={measureCount}
+                      onMove={(newStartBar) =>
+                        handleMoveAudioClip(track.id, clip.id, newStartBar)
+                      }
+                      onDelete={() => handleDeleteAudioClip(track.id, clip.id)}
+                    />
+                  ))}
+                </>
               ) : track.type === 'midi' ? (
                 <>
-                  {/* Render empty slot buttons */}
+                  {/* Render empty slot buttons for MIDI tracks */}
                   {getEmptySlots(track.id).map((startBar) => {
                     const slotLeftPercent = (startBar / measureCount) * 100;
                     const slotWidthPercent = (4 / measureCount) * 100;
 
                     return (
                       <button
-                        key={`empty-${startBar}`}
+                        key={`empty-midi-${startBar}`}
                         className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-slate-600/70 flex items-center justify-center text-slate-600 hover:text-slate-400 transition-all cursor-pointer group'
                         style={{
                           left: `${slotLeftPercent}%`,

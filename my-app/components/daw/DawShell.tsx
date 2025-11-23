@@ -1,9 +1,10 @@
 'use client';
 
-import { removeAudioLoopPlayer, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
+import { removeAllAudioLoopPlayers, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
+  createAudioClip,
   createDemoMidiClip,
   createEmptyMidiClip,
 } from '@/lib/midiTypes';
@@ -37,7 +38,10 @@ export default function DawShell() {
       muted: false,
       solo: false,
       volume: 1,
-      audioUrl: '/audio/demo-loop.wav',
+      audioClips: [
+        createAudioClip('/audio/demo-loop.wav', 0, 'Demo Loop'),
+        createAudioClip('/audio/demo-loop.wav', 8, 'Demo Loop'),
+      ],
     },
     {
       id: '2',
@@ -175,6 +179,7 @@ export default function DawShell() {
       ];
       const colorIndex = tracks.length % trackColors.length;
 
+      // Create a new audio track with a single clip at bar 0
       const newTrack: Track = {
         id: crypto.randomUUID(),
         name: audioFile.name,
@@ -183,7 +188,7 @@ export default function DawShell() {
         muted: false,
         solo: false,
         volume: 1,
-        audioUrl: audioFile.path,
+        audioClips: [createAudioClip(audioFile.path, 0, audioFile.name)],
       };
 
       setTracks((prev) => [...prev, newTrack]);
@@ -233,7 +238,7 @@ export default function DawShell() {
       if (track?.type === 'midi') {
         removeMidiTrack(trackId);
       } else if (track?.type === 'audio') {
-        removeAudioLoopPlayer(trackId);
+        removeAllAudioLoopPlayers(trackId);
       }
       
       return prev.filter((t) => t.id !== trackId);

@@ -3,8 +3,9 @@
  * Audio Library Configuration
  * Defines available audio files and their metadata
  * 
- * NOTE: All audio tracks are automatically quantized to 4-bar loops
+ * NOTE: All audio tracks are automatically quantized to 4-bar clips
  * and synced to the project BPM using Tone.js time-stretching.
+ * Each clip plays once through its 4-bar duration (no looping).
  */
 
 export interface AudioFile {
