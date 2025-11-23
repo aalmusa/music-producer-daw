@@ -1,7 +1,7 @@
 // lib/audioEngine.ts
 import * as Tone from 'tone';
 import { MidiClipData, MidiNote, noteNumberToName } from './midiTypes';
-import { getSynthPreset, SynthPresetName, EffectsChain } from './synthPresets';
+import { EffectsChain, getSynthPreset, SynthPresetName } from './synthPresets';
 
 // Shared musical settings
 export const LOOP_BARS = 16; // same as the number of measures in Timeline
@@ -14,16 +14,15 @@ let metronomeEnabled = false; // Metronome state
 let metronomeLoop: Tone.Loop | null = null;
 let metronomeSynth: Tone.MembraneSynth | null = null;
 
-// Master volume control - lazy initialization
+// Master volume control with gain node
 let masterGain: Tone.Gain | null = null;
 
 /**
  * Gets or creates the master gain node
- * This uses lazy initialization because Tone.js nodes can only be created after the audio context exists
  */
 function getMasterGain(): Tone.Gain {
   if (!masterGain) {
-    masterGain = new Tone.Gain(1).toDestination();
+    masterGain = new Tone.Gain(1);
   }
   return masterGain;
 }
@@ -39,10 +38,10 @@ let masterLimiter: Tone.Limiter | null = null;
 let masterCompressor: Tone.Compressor | null = null;
 
 /**
- * Get the master output node - returns Destination if master chain not initialized
+ * Get the master output node - returns master gain if initialized, otherwise destination
  */
 function getMasterOutput(): Tone.ToneAudioNode {
-  return masterCompressor || Tone.getDestination();
+  return getMasterGain();
 }
 
 // Audio clip players for audio tracks (4-bar clips quantized to BPM, play once)
@@ -62,12 +61,16 @@ export async function initAudio() {
         release: 0.1,
       });
     }
-    
+
     if (!masterLimiter) {
       masterLimiter = new Tone.Limiter(-3); // Prevent peaks above -3dB
     }
-    
-    // Connect master chain
+
+    // Initialize master gain
+    const masterGainNode = getMasterGain();
+
+    // Connect master chain: masterGain -> compressor -> limiter -> destination
+    masterGainNode.connect(masterCompressor);
     masterCompressor.connect(masterLimiter);
     masterLimiter.toDestination();
 
@@ -76,9 +79,7 @@ export async function initAudio() {
     transport.loopStart = 0;
     transport.loopEnd = `${LOOP_BARS}m`;
 
-    // Initialize master gain (lazy initialization)
-    const master = getMasterGain();
-    metronomeSynth = new Tone.MembraneSynth().connect(master);
+    // Initialize metronome - connect to master output
     metronomeSynth = new Tone.MembraneSynth().connect(getMasterOutput());
 
     // Click every quarter note
@@ -153,9 +154,11 @@ export function getLoopProgress(): number {
  * Creates an effects chain based on the preset configuration
  * Returns an array of Tone.js effect nodes
  */
-function createEffectsChain(effectsConfig?: EffectsChain): Tone.ToneAudioNode[] {
+function createEffectsChain(
+  effectsConfig?: EffectsChain
+): Tone.ToneAudioNode[] {
   const effects: Tone.ToneAudioNode[] = [];
-  
+
   if (!effectsConfig) return effects;
 
   // EQ - typically first in chain
@@ -256,7 +259,7 @@ function createEffectsChain(effectsConfig?: EffectsChain): Tone.ToneAudioNode[] 
 function disposeEffectsChain(trackId: string) {
   const existingEffects = effectsChainMap.get(trackId);
   if (existingEffects) {
-    existingEffects.forEach(effect => effect.dispose());
+    existingEffects.forEach((effect) => effect.dispose());
     effectsChainMap.delete(trackId);
   }
 }
@@ -265,7 +268,10 @@ function disposeEffectsChain(trackId: string) {
  * Creates or retrieves a synthesizer for a track
  * Can use a preset configuration or default to basic synth
  */
-export function getSynthForTrack(trackId: string, presetName?: string): Tone.PolySynth {
+export function getSynthForTrack(
+  trackId: string,
+  presetName?: string
+): Tone.PolySynth {
   // If we're changing presets, dispose of the old synth and effects
   const existingSynth = synthMap.get(trackId);
   if (existingSynth && presetName) {
@@ -277,43 +283,33 @@ export function getSynthForTrack(trackId: string, presetName?: string): Tone.Pol
   let synth = synthMap.get(trackId);
 
   if (!synth) {
-    // Always connect to master gain (lazy initialization)
-    synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: {
-        type: 'triangle',
-      },
-      envelope: {
-        attack: 0.005,
-        decay: 0.1,
-        sustain: 0.3,
-        release: 1,
-      },
-    }).connect(getMasterGain());
-    const preset = presetName ? getSynthPreset(presetName as SynthPresetName) : null;
-    
+    const preset = presetName
+      ? getSynthPreset(presetName as SynthPresetName)
+      : null;
+
     // Create the appropriate synth type based on the preset
     if (preset) {
       switch (preset.synthType) {
         case 'FMSynth':
-          synth = new Tone.PolySynth(Tone.FMSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.FMSynth, preset.options);
           break;
         case 'AMSynth':
-          synth = new Tone.PolySynth(Tone.AMSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.AMSynth, preset.options);
           break;
         case 'MonoSynth':
-          synth = new Tone.PolySynth(Tone.MonoSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.MonoSynth, preset.options);
           break;
         case 'PluckSynth':
           synth = new Tone.PolySynth(Tone.Synth, {
             oscillator: { type: 'triangle' },
-            envelope: { attack: 0.001, decay: 0.5, sustain: 0.1, release: 1 }
+            envelope: { attack: 0.001, decay: 0.5, sustain: 0.1, release: 1 },
           });
           break;
         case 'MetalSynth':
           synth = new Tone.PolySynth(Tone.FMSynth, {
             harmonicity: 5.1,
             modulationIndex: 32,
-            envelope: { attack: 0.001, decay: 1.4, release: 0.2 }
+            envelope: { attack: 0.001, decay: 1.4, release: 0.2 },
           });
           break;
         default:
@@ -324,16 +320,16 @@ export function getSynthForTrack(trackId: string, presetName?: string): Tone.Pol
       if (synth && preset.effects) {
         const effects = createEffectsChain(preset.effects);
         effectsChainMap.set(trackId, effects);
-        
+
         // Connect synth through effects chain to master output
         if (effects.length > 0) {
           synth.connect(effects[0]);
-          
+
           // Chain effects together
           for (let i = 0; i < effects.length - 1; i++) {
             effects[i].connect(effects[i + 1]);
           }
-          
+
           // Connect last effect to master output
           effects[effects.length - 1].connect(getMasterOutput());
         } else {
@@ -382,7 +378,6 @@ export async function getSamplerForTrack(
     samplerMap.delete(trackId);
   }
 
-  // Always connect to master gain (lazy initialization)
   // Create new sampler with C3 as the root note
   // Tone.js will automatically pitch-shift the sample for other notes
   const sampler = new Tone.Sampler(
@@ -397,7 +392,6 @@ export async function getSamplerForTrack(
         console.error(`✗ Failed to load sample for track ${trackId}:`, err);
       },
     }
-  ).connect(getMasterGain());
   ).connect(getMasterOutput());
 
   samplerMap.set(trackId, sampler);
@@ -595,14 +589,13 @@ export function setTrackVolume(trackId: string, volume: number) {
  * Sets the master volume for all audio output
  */
 export function setMasterVolume(volume: number) {
-  // Convert 0-1 range to gain value (0 to 1)
-  // Using linear scale for master to avoid excessive attenuation
   const master = getMasterGain();
+  // Use linear gain (0 to 1) for master volume for more intuitive control
   master.gain.rampTo(volume, 0.05);
+
+  const db = volume === 0 ? -Infinity : 20 * Math.log10(volume);
   console.log(
-    `✓ Master volume set to ${volume.toFixed(2)} (${((volume - 1) * 24).toFixed(
-      1
-    )} dB)`
+    `✓ Master volume set to ${(volume * 100).toFixed(0)}% (${db.toFixed(1)} dB)`
   );
 }
 
@@ -647,7 +640,6 @@ export async function createAudioLoopPlayer(
   }
 
   return new Promise((resolve, reject) => {
-    // Always connect to master gain (lazy initialization)
     // Create a new player without looping (play once through 4 bars)
     const player = new Tone.Player({
       url: audioUrl,
@@ -698,7 +690,7 @@ export async function createAudioLoopPlayer(
         console.error(`✗ Failed to load audio for clip ${clipId}:`, error);
         reject(error);
       },
-    }).connect(getMasterGain());
+    }).connect(getMasterOutput());
   });
 }
 

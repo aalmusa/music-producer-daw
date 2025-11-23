@@ -14,14 +14,7 @@ import {
   updateMidiParts,
 } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
-import {
-  Track,
-  createAudioClip,
-  createDemoMidiClip,
-  createEmptyMidiClip,
-  MidiNote,
-  MidiClipData,
-} from '@/lib/midiTypes';
+import { createAudioClip, createEmptyMidiClip, Track } from '@/lib/midiTypes';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
 import AIAssistant from './AIAssistant';
@@ -43,27 +36,6 @@ const trackColors = [
   'bg-cyan-500',
   'bg-indigo-500',
 ];
-
-// Helper to create notes with proper structure
-function note(pitch: number, start: number, duration: number, velocity: number): MidiNote {
-  return {
-    id: crypto.randomUUID(),
-    pitch,
-    start,
-    duration,
-    velocity,
-  };
-}
-
-// Helper to create MIDI clips
-function clip(id: string, startBar: number, durationBars: number, notes: MidiNote[]): MidiClipData {
-  return {
-    id,
-    startBar,
-    bars: durationBars,
-    notes,
-  };
-}
 
 export default function DawShell() {
   // Right sidebar width in pixels, resizable by user
@@ -88,52 +60,24 @@ export default function DawShell() {
   // Track height state - shared between TrackList and Timeline
   const [trackHeight, setTrackHeight] = useState(96);
 
-  // Track data - Start with empty tracks
+  // Track data - Start with empty tracks for AI to populate
   const [tracks, setTracks] = useState<Track[]>([]);
-  // Track data with MIDI support
-  const [tracks, setTracks] = useState<Track[]>([
-    {
-      id: '1',
-      name: 'Drums',
-      color: 'bg-emerald-500',
-      type: 'audio',
-      muted: false,
-      solo: false,
-      volume: 1,
-      audioClips: [
-        createAudioClip('/audio/demo-loop.wav', 0, 'Demo Loop'),
-        createAudioClip('/audio/demo-loop.wav', 8, 'Demo Loop'),
-      ],
-    },
-    {
-      id: '2',
-      name: 'Bass',
-      color: 'bg-blue-500',
-      type: 'midi',
-      muted: false,
-      solo: false,
-      volume: 1,
-      midiClips: [createDemoMidiClip(0), createEmptyMidiClip(4, 4)],
-    },
-    {
-      id: '3',
-      name: 'Keys',
-      color: 'bg-purple-500',
-      type: 'midi',
-      muted: false,
-      solo: false,
-      volume: 1,
-      midiClips: [createEmptyMidiClip(4, 0)],
-    },
-  ]);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
     tracks.forEach((track) => {
-      if (track.type === 'midi' && track.midiClips && track.instrumentMode !== null) {
+      if (
+        track.type === 'midi' &&
+        track.midiClips &&
+        track.instrumentMode !== null
+      ) {
         // Only initialize if the track has a mode selected
-        const samplerUrl = track.instrumentMode === 'sampler' ? track.samplerAudioUrl : undefined;
-        const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+        const samplerUrl =
+          track.instrumentMode === 'sampler'
+            ? track.samplerAudioUrl
+            : undefined;
+        const synthPreset =
+          track.instrumentMode === 'synth' ? track.synthPreset : undefined;
         updateMidiParts(track.id, track.midiClips, samplerUrl, synthPreset);
       }
     });
@@ -183,9 +127,9 @@ export default function DawShell() {
         solo: false,
         volume: 1,
         ...(trackType === 'midi'
-          ? { 
+          ? {
               midiClips: [createEmptyMidiClip(4, 0)],
-              instrumentMode: null // Start with no mode selected
+              instrumentMode: null, // Start with no mode selected
             }
           : { audioUrl: undefined }),
       };
@@ -259,7 +203,10 @@ export default function DawShell() {
 
             // Update the MIDI part to use the sampler
             if (track.midiClips) {
-              const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+              const synthPreset =
+                track.instrumentMode === 'synth'
+                  ? track.synthPreset
+                  : undefined;
               updateMidiParts(
                 trackId,
                 track.midiClips,
@@ -572,6 +519,8 @@ export default function DawShell() {
       handleToggleMetronomeFromAI,
       findTracksByPattern,
     ]
+  );
+
   const handleRenameTrack = useCallback((trackId: string, newName: string) => {
     setTracks((prev) =>
       prev.map((track) =>
@@ -613,7 +562,11 @@ export default function DawShell() {
     (trackId: string, presetName: string) => {
       setTracks((prev) =>
         prev.map((track) => {
-          if (track.id === trackId && track.type === 'midi' && track.instrumentMode === 'synth') {
+          if (
+            track.id === trackId &&
+            track.type === 'midi' &&
+            track.instrumentMode === 'synth'
+          ) {
             const updatedTrack: Track = {
               ...track,
               synthPreset: presetName,
@@ -696,9 +649,9 @@ export default function DawShell() {
 
           {/* Timeline area */}
           <div className='flex-1 overflow-auto relative bg-slate-900'>
-            <Timeline 
-              tracks={tracks} 
-              setTracks={setTracks} 
+            <Timeline
+              tracks={tracks}
+              setTracks={setTracks}
               trackHeight={trackHeight}
               setTrackHeight={setTrackHeight}
             />
