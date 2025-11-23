@@ -468,7 +468,10 @@ export default function DawShell() {
 
           case 'delete_track':
             const trackToDelete = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
+              (t) => 
+                t.id === action.trackId || 
+                t.name === action.trackName ||
+                t.name.toLowerCase() === action.trackName?.toLowerCase()
             );
             if (trackToDelete) {
               handleDeleteTrack(trackToDelete.id);
@@ -478,7 +481,10 @@ export default function DawShell() {
 
           case 'rename_track':
             const trackToRename = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
+              (t) => 
+                t.id === action.trackId || 
+                t.name === action.trackName ||
+                t.name.toLowerCase() === action.trackName?.toLowerCase()
             );
             if (trackToRename && action.newTrackName) {
               setTracks((prevTracks) =>
@@ -496,12 +502,20 @@ export default function DawShell() {
 
           case 'adjust_volume':
             const trackToAdjust = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
+              (t) => 
+                t.id === action.trackId || 
+                t.name === action.trackName ||
+                t.name.toLowerCase() === action.trackName?.toLowerCase()
             );
             if (trackToAdjust && action.volume !== undefined) {
               handleVolumeChange(trackToAdjust.id, action.volume);
               console.log(
-                `✓ Adjusted volume for ${trackToAdjust.name}: ${action.volume}`
+                `✓ Adjusted volume for ${trackToAdjust.name}: ${Math.round(action.volume * 100)}%`
+              );
+            } else {
+              console.warn(
+                `⚠️ Could not adjust volume - Track not found: ${action.trackName || action.trackId}`,
+                { availableTracks: tracks.map(t => t.name), action }
               );
             }
             break;
@@ -596,7 +610,11 @@ export default function DawShell() {
               const track = tracks.find((t) => t.id === action.trackId);
               if (track) tracksToMute = [track];
             } else if (action.trackName) {
-              const track = tracks.find((t) => t.name === action.trackName);
+              const track = tracks.find(
+                (t) => 
+                  t.name === action.trackName ||
+                  t.name.toLowerCase() === action.trackName?.toLowerCase()
+              );
               if (track) tracksToMute = [track];
             }
 
@@ -626,7 +644,11 @@ export default function DawShell() {
               const track = tracks.find((t) => t.id === action.trackId);
               if (track) tracksToUnmute = [track];
             } else if (action.trackName) {
-              const track = tracks.find((t) => t.name === action.trackName);
+              const track = tracks.find(
+                (t) => 
+                  t.name === action.trackName ||
+                  t.name.toLowerCase() === action.trackName?.toLowerCase()
+              );
               if (track) tracksToUnmute = [track];
             }
 
@@ -656,7 +678,11 @@ export default function DawShell() {
               const track = tracks.find((t) => t.id === action.trackId);
               if (track) tracksToSolo = [track];
             } else if (action.trackName) {
-              const track = tracks.find((t) => t.name === action.trackName);
+              const track = tracks.find(
+                (t) => 
+                  t.name === action.trackName ||
+                  t.name.toLowerCase() === action.trackName?.toLowerCase()
+              );
               if (track) tracksToSolo = [track];
             }
 
@@ -686,7 +712,11 @@ export default function DawShell() {
               const track = tracks.find((t) => t.id === action.trackId);
               if (track) tracksToUnsolo = [track];
             } else if (action.trackName) {
-              const track = tracks.find((t) => t.name === action.trackName);
+              const track = tracks.find(
+                (t) => 
+                  t.name === action.trackName ||
+                  t.name.toLowerCase() === action.trackName?.toLowerCase()
+              );
               if (track) tracksToUnsolo = [track];
             }
 
