@@ -1,5 +1,3 @@
-// referenceManager.ts
-
 import path from "path";
 import { analyzeFromPath } from "./analyzeSongProcess";
 import {

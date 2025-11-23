@@ -1,10 +1,11 @@
 'use client';
 
 import { useSongSpec } from '@/lib/song-spec-context';
-import { File, Music, Paperclip, X } from 'lucide-react';
-import { useRef, useState } from 'react';
-import { Button } from './ui/button';
-import { ButtonGroup } from './ui/button-group';
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { Music, Paperclip, X, File, ArrowRight } from "lucide-react";
+import { Button } from "./ui/button";
+import { ButtonGroup } from "./ui/button-group";
 import {
   InputGroup,
   InputGroupAddon,
@@ -36,10 +37,12 @@ const SUGGESTIONS = [
 ];
 
 export function ChatUI() {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [canProceed, setCanProceed] = useState(false); // New state for the "Greenlight"
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { updateSongSpec } = useSongSpec();
 
@@ -148,6 +151,15 @@ export function ChatUI() {
       if (ctxData.songSpec) {
         updateSongSpec(ctxData.songSpec);
       }
+
+      // Check if the Agent has given the Greenlight
+      if (ctxData.canProceed) {
+        setCanProceed(true);
+      } else {
+        // Optional: Reset if the user changes something major and the agent revokes approval
+        // setCanProceed(false); 
+      }
+
     } catch (err) {
       console.error('Send error:', err);
       addMessage(
@@ -181,15 +193,6 @@ export function ChatUI() {
       }));
 
       setAttachedFiles((prev) => [...prev, ...newFiles]);
-
-      newFiles.forEach((attachedFile) => {
-        console.log(
-          'File ready to upload:',
-          attachedFile.name,
-          attachedFile.size,
-          'bytes'
-        );
-      });
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -198,10 +201,6 @@ export function ChatUI() {
 
   function handleRemoveFile(fileId: string) {
     setAttachedFiles((prev) => {
-      const fileToRemove = prev.find((f) => f.id === fileId);
-      if (fileToRemove) {
-        console.log('File removed (will not be uploaded):', fileToRemove.name);
-      }
       return prev.filter((f) => f.id !== fileId);
     });
   }
@@ -301,11 +300,25 @@ export function ChatUI() {
       <Separator className='relative z-10' />
 
       {/* Bottom input bar */}
-      <footer className='w-full px-4 py-3 flex-shrink-0 relative z-10'>
-        {/* Suggested prompts */}
-        {messages.length === 0 && (
-          <div className='mx-auto mb-3 w-full max-w-4xl'>
-            <div className='grid gap-3 md:grid-cols-2'>
+      <footer className="w-full px-4 py-3 flex-shrink-0 relative z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        
+        {/* NEW: Greenlight / Proceed Button */}
+        {canProceed && (
+           <div className="mx-auto mb-3 w-full max-w-4xl animate-in fade-in slide-in-from-bottom-4">
+             <Button 
+               className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg transition-all"
+               size="lg"
+               onClick={() => router.push('/daw')}
+             >
+               Start Development <ArrowRight className="ml-2 h-5 w-5" />
+             </Button>
+           </div>
+        )}
+
+        {/* Suggested prompts (only if no messages) */}
+        {!canProceed && messages.length === 0 && (
+          <div className="mx-auto mb-3 w-full max-w-4xl">
+            <div className="grid gap-3 md:grid-cols-2">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
