@@ -1,7 +1,7 @@
 // lib/audioEngine.ts
 import * as Tone from 'tone';
 import { MidiClipData, MidiNote, noteNumberToName } from './midiTypes';
-import { getSynthPreset, SynthPresetName, EffectsChain } from './synthPresets';
+import { EffectsChain, getSynthPreset, SynthPresetName } from './synthPresets';
 
 // Shared musical settings
 export const LOOP_BARS = 16; // same as the number of measures in Timeline
@@ -14,6 +14,19 @@ let metronomeEnabled = false; // Metronome state
 let metronomeLoop: Tone.Loop | null = null;
 let metronomeSynth: Tone.MembraneSynth | null = null;
 
+// Master volume control with gain node
+let masterGain: Tone.Gain | null = null;
+
+/**
+ * Gets or creates the master gain node
+ */
+function getMasterGain(): Tone.Gain {
+  if (!masterGain) {
+    masterGain = new Tone.Gain(1);
+  }
+  return masterGain;
+}
+
 // MIDI synthesizers and parts
 const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
@@ -25,10 +38,10 @@ let masterLimiter: Tone.Limiter | null = null;
 let masterCompressor: Tone.Compressor | null = null;
 
 /**
- * Get the master output node - returns Destination if master chain not initialized
+ * Get the master output node - returns master gain if initialized, otherwise destination
  */
 function getMasterOutput(): Tone.ToneAudioNode {
-  return masterCompressor || Tone.getDestination();
+  return getMasterGain();
 }
 
 // Audio clip players for audio tracks (4-bar clips quantized to BPM, play once)
@@ -48,12 +61,16 @@ export async function initAudio() {
         release: 0.1,
       });
     }
-    
+
     if (!masterLimiter) {
       masterLimiter = new Tone.Limiter(-3); // Prevent peaks above -3dB
     }
-    
-    // Connect master chain
+
+    // Initialize master gain
+    const masterGainNode = getMasterGain();
+
+    // Connect master chain: masterGain -> compressor -> limiter -> destination
+    masterGainNode.connect(masterCompressor);
     masterCompressor.connect(masterLimiter);
     masterLimiter.toDestination();
 
@@ -62,6 +79,7 @@ export async function initAudio() {
     transport.loopStart = 0;
     transport.loopEnd = `${LOOP_BARS}m`;
 
+    // Initialize metronome - connect to master output
     metronomeSynth = new Tone.MembraneSynth().connect(getMasterOutput());
 
     // Click every quarter note
@@ -136,9 +154,11 @@ export function getLoopProgress(): number {
  * Creates an effects chain based on the preset configuration
  * Returns an array of Tone.js effect nodes
  */
-function createEffectsChain(effectsConfig?: EffectsChain): Tone.ToneAudioNode[] {
+function createEffectsChain(
+  effectsConfig?: EffectsChain
+): Tone.ToneAudioNode[] {
   const effects: Tone.ToneAudioNode[] = [];
-  
+
   if (!effectsConfig) return effects;
 
   // EQ - typically first in chain
@@ -239,7 +259,7 @@ function createEffectsChain(effectsConfig?: EffectsChain): Tone.ToneAudioNode[] 
 function disposeEffectsChain(trackId: string) {
   const existingEffects = effectsChainMap.get(trackId);
   if (existingEffects) {
-    existingEffects.forEach(effect => effect.dispose());
+    existingEffects.forEach((effect) => effect.dispose());
     effectsChainMap.delete(trackId);
   }
 }
@@ -248,7 +268,10 @@ function disposeEffectsChain(trackId: string) {
  * Creates or retrieves a synthesizer for a track
  * Can use a preset configuration or default to basic synth
  */
-export function getSynthForTrack(trackId: string, presetName?: string): Tone.PolySynth {
+export function getSynthForTrack(
+  trackId: string,
+  presetName?: string
+): Tone.PolySynth {
   // If we're changing presets, dispose of the old synth and effects
   const existingSynth = synthMap.get(trackId);
   if (existingSynth && presetName) {
@@ -260,31 +283,33 @@ export function getSynthForTrack(trackId: string, presetName?: string): Tone.Pol
   let synth = synthMap.get(trackId);
 
   if (!synth) {
-    const preset = presetName ? getSynthPreset(presetName as SynthPresetName) : null;
-    
+    const preset = presetName
+      ? getSynthPreset(presetName as SynthPresetName)
+      : null;
+
     // Create the appropriate synth type based on the preset
     if (preset) {
       switch (preset.synthType) {
         case 'FMSynth':
-          synth = new Tone.PolySynth(Tone.FMSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.FMSynth, preset.options);
           break;
         case 'AMSynth':
-          synth = new Tone.PolySynth(Tone.AMSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.AMSynth, preset.options);
           break;
         case 'MonoSynth':
-          synth = new Tone.PolySynth(Tone.MonoSynth, preset.options) as any;
+          synth = new Tone.PolySynth(Tone.MonoSynth, preset.options);
           break;
         case 'PluckSynth':
           synth = new Tone.PolySynth(Tone.Synth, {
             oscillator: { type: 'triangle' },
-            envelope: { attack: 0.001, decay: 0.5, sustain: 0.1, release: 1 }
+            envelope: { attack: 0.001, decay: 0.5, sustain: 0.1, release: 1 },
           });
           break;
         case 'MetalSynth':
           synth = new Tone.PolySynth(Tone.FMSynth, {
             harmonicity: 5.1,
             modulationIndex: 32,
-            envelope: { attack: 0.001, decay: 1.4, release: 0.2 }
+            envelope: { attack: 0.001, decay: 1.4, release: 0.2 },
           });
           break;
         default:
@@ -295,16 +320,16 @@ export function getSynthForTrack(trackId: string, presetName?: string): Tone.Pol
       if (synth && preset.effects) {
         const effects = createEffectsChain(preset.effects);
         effectsChainMap.set(trackId, effects);
-        
+
         // Connect synth through effects chain to master output
         if (effects.length > 0) {
           synth.connect(effects[0]);
-          
+
           // Chain effects together
           for (let i = 0; i < effects.length - 1; i++) {
             effects[i].connect(effects[i + 1]);
           }
-          
+
           // Connect last effect to master output
           effects[effects.length - 1].connect(getMasterOutput());
         } else {
@@ -542,7 +567,7 @@ export function setTrackMute(trackId: string, muted: boolean) {
 }
 
 /**
- * Sets the volume for a track's synth
+ * Sets the volume for a track's synth or sampler
  */
 export function setTrackVolume(trackId: string, volume: number) {
   const synth = synthMap.get(trackId);
@@ -551,6 +576,27 @@ export function setTrackVolume(trackId: string, volume: number) {
     const db = volume === 0 ? -Infinity : (volume - 1) * 24;
     synth.volume.value = db;
   }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    // Convert 0-1 range to decibels (-24 to 0)
+    const db = volume === 0 ? -Infinity : (volume - 1) * 24;
+    sampler.volume.value = db;
+  }
+}
+
+/**
+ * Sets the master volume for all audio output
+ */
+export function setMasterVolume(volume: number) {
+  const master = getMasterGain();
+  // Use linear gain (0 to 1) for master volume for more intuitive control
+  master.gain.rampTo(volume, 0.05);
+
+  const db = volume === 0 ? -Infinity : 20 * Math.log10(volume);
+  console.log(
+    `✓ Master volume set to ${(volume * 100).toFixed(0)}% (${db.toFixed(1)} dB)`
+  );
 }
 
 /**
@@ -580,7 +626,7 @@ export async function createAudioLoopPlayer(
   startBar: number = 0
 ): Promise<Tone.Player> {
   const playerKey = `${trackId}:${clipId}`;
-  
+
   // Remove existing player if it exists
   const existingPlayer = audioPlayerMap.get(playerKey);
   if (existingPlayer) {
@@ -602,27 +648,30 @@ export async function createAudioLoopPlayer(
         try {
           // Calculate the duration of 4 bars at current BPM
           const fourBarsDuration = transport.toSeconds('4m');
-          
+
           // Check if buffer is loaded
           if (!player.buffer || !player.buffer.loaded) {
             console.error('Buffer not loaded properly');
             reject(new Error('Buffer not loaded'));
             return;
           }
-          
+
           // Set playback rate to fit the audio into exactly 4 bars
           // This quantizes the clip to the project's BPM
           const originalDuration = player.buffer.duration;
           const playbackRate = originalDuration / fourBarsDuration;
           player.playbackRate = playbackRate;
-          
+
           // Sync player with transport
           // Start at the clip's position and stop after 4 bars
-          player.sync().start(`${startBar}m`).stop(`${startBar + 4}m`);
-          
+          player
+            .sync()
+            .start(`${startBar}m`)
+            .stop(`${startBar + 4}m`);
+
           // Store in map
           audioPlayerMap.set(playerKey, player);
-          
+
           console.log(
             `✓ Audio clip loaded for clip ${clipId} on track ${trackId}:`,
             `original=${originalDuration.toFixed(2)}s,`,
@@ -630,7 +679,7 @@ export async function createAudioLoopPlayer(
             `rate=${playbackRate.toFixed(3)},`,
             `startBar=${startBar}-${startBar + 4}`
           );
-          
+
           resolve(player);
         } catch (error) {
           console.error(`✗ Error setting up audio player:`, error);
@@ -641,7 +690,7 @@ export async function createAudioLoopPlayer(
         console.error(`✗ Failed to load audio for clip ${clipId}:`, error);
         reject(error);
       },
-    }).toDestination();
+    }).connect(getMasterOutput());
   });
 }
 
@@ -650,12 +699,12 @@ export async function createAudioLoopPlayer(
  */
 export function updateAudioLoopBpm() {
   const fourBarsDuration = transport.toSeconds('4m');
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     const originalDuration = player.buffer.duration;
     const playbackRate = originalDuration / fourBarsDuration;
     player.playbackRate = playbackRate;
-    
+
     console.log(
       `Updated clip playback rate for ${playerKey}: ${playbackRate.toFixed(3)}`
     );
@@ -691,7 +740,7 @@ export function removeAudioLoopPlayer(trackId: string, clipId: string) {
  */
 export function removeAllAudioLoopPlayers(trackId: string) {
   const keysToRemove: string[] = [];
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     if (playerKey.startsWith(`${trackId}:`)) {
       try {
@@ -707,11 +756,13 @@ export function removeAllAudioLoopPlayers(trackId: string) {
       keysToRemove.push(playerKey);
     }
   });
-  
-  keysToRemove.forEach(key => audioPlayerMap.delete(key));
-  
+
+  keysToRemove.forEach((key) => audioPlayerMap.delete(key));
+
   if (keysToRemove.length > 0) {
-    console.log(`✓ Removed ${keysToRemove.length} audio clip player(s) for track ${trackId}`);
+    console.log(
+      `✓ Removed ${keysToRemove.length} audio clip player(s) for track ${trackId}`
+    );
   }
 }
 
@@ -721,7 +772,7 @@ export function removeAllAudioLoopPlayers(trackId: string) {
 export function setAudioLoopVolume(trackId: string, volume: number) {
   // Convert 0-1 range to decibels (-24 to 0)
   const db = volume === 0 ? -Infinity : (volume - 1) * 24;
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     if (playerKey.startsWith(`${trackId}:`)) {
       player.volume.value = db;

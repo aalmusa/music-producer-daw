@@ -1,44 +1,41 @@
 'use client';
 
-import { removeAllAudioLoopPlayers, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
-import { AudioFile } from '@/lib/audioLibrary';
 import {
-  Track,
-  createAudioClip,
-  createDemoMidiClip,
-  createEmptyMidiClip,
-  MidiNote,
-  MidiClipData,
-} from '@/lib/midiTypes';
+  initAudio,
+  removeAllAudioLoopPlayers,
+  removeMidiTrack,
+  setBpm as setAudioEngineBpm,
+  setAudioLoopMute,
+  setAudioLoopVolume,
+  setMasterVolume,
+  setTrackMute,
+  setTrackVolume,
+  toggleMetronome,
+  updateMidiParts,
+} from '@/lib/audioEngine';
+import { AudioFile } from '@/lib/audioLibrary';
+import { createAudioClip, createEmptyMidiClip, Track } from '@/lib/midiTypes';
+import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
+import AIAssistant from './AIAssistant';
 import AudioFilePicker from './AudioFilePicker';
 import Mixer from './Mixer';
-import RightSidebar from './RightSideBar';
 import Timeline from './Timeline';
 import TrackList from './TrackList';
-import TransportBar from './TransportBar';
 import TrackTypeDialog from './TrackTypeDialog';
+import TransportBar from './TransportBar';
 
-// Helper to create notes with proper structure
-function note(pitch: number, start: number, duration: number, velocity: number): MidiNote {
-  return {
-    id: crypto.randomUUID(),
-    pitch,
-    start,
-    duration,
-    velocity,
-  };
-}
-
-// Helper to create MIDI clips
-function clip(id: string, startBar: number, durationBars: number, notes: MidiNote[]): MidiClipData {
-  return {
-    id,
-    startBar,
-    bars: durationBars,
-    notes,
-  };
-}
+// Color palette for tracks
+const trackColors = [
+  'bg-emerald-500',
+  'bg-blue-500',
+  'bg-purple-500',
+  'bg-pink-500',
+  'bg-yellow-500',
+  'bg-red-500',
+  'bg-cyan-500',
+  'bg-indigo-500',
+];
 
 export default function DawShell() {
   // Right sidebar width in pixels, resizable by user
@@ -51,55 +48,36 @@ export default function DawShell() {
   // Audio file picker state
   const [isAudioPickerOpen, setIsAudioPickerOpen] = useState(false);
 
+  // BPM state
+  const [bpm, setBpm] = useState(120);
+
+  // Master volume state (0 to 1)
+  const [masterVolume, setMasterVolumeState] = useState(1);
+
+  // Metronome state
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
+
   // Track height state - shared between TrackList and Timeline
   const [trackHeight, setTrackHeight] = useState(96);
 
-  // Track data - Start with empty tracks
+  // Track data - Start with empty tracks for AI to populate
   const [tracks, setTracks] = useState<Track[]>([]);
-  // Track data with MIDI support
-  const [tracks, setTracks] = useState<Track[]>([
-    {
-      id: '1',
-      name: 'Drums',
-      color: 'bg-emerald-500',
-      type: 'audio',
-      muted: false,
-      solo: false,
-      volume: 1,
-      audioClips: [
-        createAudioClip('/audio/demo-loop.wav', 0, 'Demo Loop'),
-        createAudioClip('/audio/demo-loop.wav', 8, 'Demo Loop'),
-      ],
-    },
-    {
-      id: '2',
-      name: 'Bass',
-      color: 'bg-blue-500',
-      type: 'midi',
-      muted: false,
-      solo: false,
-      volume: 1,
-      midiClips: [createDemoMidiClip(0), createEmptyMidiClip(4, 4)],
-    },
-    {
-      id: '3',
-      name: 'Keys',
-      color: 'bg-purple-500',
-      type: 'midi',
-      muted: false,
-      solo: false,
-      volume: 1,
-      midiClips: [createEmptyMidiClip(4, 0)],
-    },
-  ]);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
     tracks.forEach((track) => {
-      if (track.type === 'midi' && track.midiClips && track.instrumentMode !== null) {
+      if (
+        track.type === 'midi' &&
+        track.midiClips &&
+        track.instrumentMode !== null
+      ) {
         // Only initialize if the track has a mode selected
-        const samplerUrl = track.instrumentMode === 'sampler' ? track.samplerAudioUrl : undefined;
-        const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+        const samplerUrl =
+          track.instrumentMode === 'sampler'
+            ? track.samplerAudioUrl
+            : undefined;
+        const synthPreset =
+          track.instrumentMode === 'synth' ? track.synthPreset : undefined;
         updateMidiParts(track.id, track.midiClips, samplerUrl, synthPreset);
       }
     });
@@ -131,18 +109,6 @@ export default function DawShell() {
     );
   }, []);
 
-  // Color palette for tracks
-  const trackColors = [
-    'bg-emerald-500',
-    'bg-blue-500',
-    'bg-purple-500',
-    'bg-pink-500',
-    'bg-yellow-500',
-    'bg-red-500',
-    'bg-cyan-500',
-    'bg-indigo-500',
-  ];
-
   /**
    * Creates a new track with the specified type.
    * This function can be called by users via dialog or by AI agents programmatically.
@@ -161,9 +127,9 @@ export default function DawShell() {
         solo: false,
         volume: 1,
         ...(trackType === 'midi'
-          ? { 
+          ? {
               midiClips: [createEmptyMidiClip(4, 0)],
-              instrumentMode: null // Start with no mode selected
+              instrumentMode: null, // Start with no mode selected
             }
           : { audioUrl: undefined }),
       };
@@ -200,17 +166,6 @@ export default function DawShell() {
   // User selected an audio file from the picker
   const handleAudioFileSelected = useCallback(
     (audioFile: AudioFile) => {
-      const trackNumber = tracks.length + 1;
-      const trackColors = [
-        'bg-emerald-500',
-        'bg-blue-500',
-        'bg-purple-500',
-        'bg-pink-500',
-        'bg-yellow-500',
-        'bg-red-500',
-        'bg-cyan-500',
-        'bg-indigo-500',
-      ];
       const colorIndex = tracks.length % trackColors.length;
 
       // Create a new audio track with a single clip at bar 0
@@ -248,7 +203,10 @@ export default function DawShell() {
 
             // Update the MIDI part to use the sampler
             if (track.midiClips) {
-              const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+              const synthPreset =
+                track.instrumentMode === 'synth'
+                  ? track.synthPreset
+                  : undefined;
               updateMidiParts(
                 trackId,
                 track.midiClips,
@@ -269,17 +227,299 @@ export default function DawShell() {
   const handleDeleteTrack = useCallback((trackId: string) => {
     setTracks((prev) => {
       const track = prev.find((t) => t.id === trackId);
-      
+
       // Clean up audio engine resources
       if (track?.type === 'midi') {
         removeMidiTrack(trackId);
       } else if (track?.type === 'audio') {
         removeAllAudioLoopPlayers(trackId);
       }
-      
+
       return prev.filter((t) => t.id !== trackId);
     });
   }, []);
+
+  const handleVolumeChange = useCallback((trackId: string, volume: number) => {
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id === trackId) {
+          // Update audio engine volume
+          if (track.type === 'midi') {
+            setTrackVolume(trackId, volume);
+          } else if (track.type === 'audio') {
+            setAudioLoopVolume(trackId, volume);
+          }
+          return { ...track, volume };
+        }
+        return track;
+      })
+    );
+  }, []);
+
+  const handleBpmChange = useCallback((newBpm: number) => {
+    setBpm(newBpm);
+    setAudioEngineBpm(newBpm);
+  }, []);
+
+  const handleMasterVolumeChange = useCallback((volume: number) => {
+    setMasterVolumeState(volume);
+    setMasterVolume(volume);
+  }, []);
+
+  const handleMetronomeToggle = useCallback((enabled: boolean) => {
+    setMetronomeEnabled(enabled);
+  }, []);
+
+  const handleToggleMetronomeFromAI = useCallback(async () => {
+    await initAudio(); // Ensure audio is initialized
+    const newState = toggleMetronome();
+    setMetronomeEnabled(newState);
+    return newState;
+  }, []);
+
+  // Helper function to find tracks by pattern (case-insensitive partial match)
+  const findTracksByPattern = useCallback(
+    (pattern: string) => {
+      const lowerPattern = pattern.toLowerCase();
+      return tracks.filter((track) =>
+        track.name.toLowerCase().includes(lowerPattern)
+      );
+    },
+    [tracks]
+  );
+
+  // Handle AI assistant actions
+  const handleAIAssistantActions = useCallback(
+    async (response: DAWAssistantResponse) => {
+      if (!response.success || response.actions.length === 0) return;
+
+      for (const action of response.actions) {
+        switch (action.type) {
+          case 'create_track':
+            if (action.trackType) {
+              const trackNumber = tracks.length + 1;
+              const colorIndex = tracks.length % trackColors.length;
+              const trackName =
+                action.trackName ||
+                `${
+                  action.trackType === 'midi' ? 'Synth' : 'Audio'
+                } ${trackNumber}`;
+
+              const newTrack: Track = {
+                id: crypto.randomUUID(),
+                name: trackName,
+                color: trackColors[colorIndex],
+                type: action.trackType,
+                muted: false,
+                solo: false,
+                volume: 1,
+                ...(action.trackType === 'midi'
+                  ? { midiClips: [createEmptyMidiClip()] }
+                  : { audioClips: [] }),
+              };
+
+              setTracks((prev) => [...prev, newTrack]);
+
+              // Initialize MIDI part if it's a MIDI track
+              if (action.trackType === 'midi' && newTrack.midiClips) {
+                updateMidiParts(newTrack.id, newTrack.midiClips);
+              }
+
+              console.log(`✓ Created ${action.trackType} track: ${trackName}`);
+            }
+            break;
+
+          case 'delete_track':
+            const trackToDelete = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackToDelete) {
+              handleDeleteTrack(trackToDelete.id);
+              console.log(`✓ Deleted track: ${trackToDelete.name}`);
+            }
+            break;
+
+          case 'adjust_volume':
+            const trackToAdjust = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackToAdjust && action.volume !== undefined) {
+              handleVolumeChange(trackToAdjust.id, action.volume);
+              console.log(
+                `✓ Adjusted volume for ${trackToAdjust.name}: ${action.volume}`
+              );
+            }
+            break;
+
+          case 'adjust_bpm':
+            if (action.bpm) {
+              handleBpmChange(action.bpm);
+              console.log(`✓ Set BPM to ${action.bpm}`);
+            }
+            break;
+
+          case 'select_instrument':
+            const trackForInstrument = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackForInstrument && action.instrumentPath) {
+              handleAttachSampleToMidiTrack(
+                trackForInstrument.id,
+                action.instrumentPath
+              );
+              console.log(
+                `✓ Set instrument for ${trackForInstrument.name}: ${action.instrumentPath}`
+              );
+            }
+            break;
+
+          case 'mute_tracks': {
+            // Mute tracks by pattern, ID, or name
+            let tracksToMute: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToMute = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToMute = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToMute = [track];
+            }
+
+            tracksToMute.forEach((track) => {
+              if (!track.muted) {
+                handleToggleMute(track.id);
+              }
+            });
+
+            if (tracksToMute.length > 0) {
+              console.log(
+                `✓ Muted ${tracksToMute.length} track(s): ${tracksToMute
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'unmute_tracks': {
+            // Unmute tracks by pattern, ID, or name
+            let tracksToUnmute: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToUnmute = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToUnmute = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToUnmute = [track];
+            }
+
+            tracksToUnmute.forEach((track) => {
+              if (track.muted) {
+                handleToggleMute(track.id);
+              }
+            });
+
+            if (tracksToUnmute.length > 0) {
+              console.log(
+                `✓ Unmuted ${tracksToUnmute.length} track(s): ${tracksToUnmute
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'solo_tracks': {
+            // Solo tracks by pattern, ID, or name
+            let tracksToSolo: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToSolo = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToSolo = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToSolo = [track];
+            }
+
+            tracksToSolo.forEach((track) => {
+              if (!track.solo) {
+                handleToggleSolo(track.id);
+              }
+            });
+
+            if (tracksToSolo.length > 0) {
+              console.log(
+                `✓ Soloed ${tracksToSolo.length} track(s): ${tracksToSolo
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'unsolo_tracks': {
+            // Unsolo tracks by pattern, ID, or name
+            let tracksToUnsolo: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToUnsolo = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToUnsolo = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToUnsolo = [track];
+            }
+
+            tracksToUnsolo.forEach((track) => {
+              if (track.solo) {
+                handleToggleSolo(track.id);
+              }
+            });
+
+            if (tracksToUnsolo.length > 0) {
+              console.log(
+                `✓ Unsoloed ${tracksToUnsolo.length} track(s): ${tracksToUnsolo
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'toggle_metronome': {
+            const newState = await handleToggleMetronomeFromAI();
+            console.log(`✓ Metronome ${newState ? 'enabled' : 'disabled'}`);
+            break;
+          }
+
+          case 'none':
+            // No action needed, just conversation
+            break;
+
+          default:
+            console.warn('Unknown action type:', action.type);
+        }
+      }
+    },
+    [
+      tracks,
+      handleDeleteTrack,
+      handleVolumeChange,
+      handleBpmChange,
+      handleAttachSampleToMidiTrack,
+      handleToggleMute,
+      handleToggleSolo,
+      handleToggleMetronomeFromAI,
+      findTracksByPattern,
+    ]
+  );
 
   const handleRenameTrack = useCallback((trackId: string, newName: string) => {
     setTracks((prev) =>
@@ -322,7 +562,11 @@ export default function DawShell() {
     (trackId: string, presetName: string) => {
       setTracks((prev) =>
         prev.map((track) => {
-          if (track.id === trackId && track.type === 'midi' && track.instrumentMode === 'synth') {
+          if (
+            track.id === trackId &&
+            track.type === 'midi' &&
+            track.instrumentMode === 'synth'
+          ) {
             const updatedTrack: Track = {
               ...track,
               synthPreset: presetName,
@@ -372,14 +616,19 @@ export default function DawShell() {
   }, [isResizingRight]);
 
   return (
-    <main className='min-h-screen flex flex-col bg-slate-900 text-slate-100'>
+    <main className='h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden'>
       {/* Top transport bar */}
-      <header className='h-16 border-b border-slate-800 flex items-center px-4'>
-        <TransportBar />
+      <header className='h-16 border-b border-slate-800 flex items-center px-4 shrink-0'>
+        <TransportBar
+          bpm={bpm}
+          onBpmChange={handleBpmChange}
+          metronomeEnabled={metronomeEnabled}
+          onMetronomeToggle={handleMetronomeToggle}
+        />
       </header>
 
       {/* Middle content: tracks + timeline + right sidebar */}
-      <section className='flex flex-1 overflow-hidden'>
+      <section className='flex flex-1 overflow-hidden min-h-0'>
         {/* Left: track list and timeline */}
         <div className='flex flex-1 overflow-hidden'>
           {/* Track list column */}
@@ -400,9 +649,9 @@ export default function DawShell() {
 
           {/* Timeline area */}
           <div className='flex-1 overflow-auto relative bg-slate-900'>
-            <Timeline 
-              tracks={tracks} 
-              setTracks={setTracks} 
+            <Timeline
+              tracks={tracks}
+              setTracks={setTracks}
               trackHeight={trackHeight}
               setTrackHeight={setTrackHeight}
             />
@@ -415,18 +664,38 @@ export default function DawShell() {
           className='w-1 cursor-col-resize bg-slate-800 hover:bg-emerald-500 transition-colors'
         />
 
-        {/* Right sidebar with dynamic width */}
+        {/* Right sidebar with dynamic width - AI Assistant */}
         <aside
           className='border-l border-slate-800 bg-slate-950'
           style={{ width: rightWidth }}
         >
-          <RightSidebar />
+          <AIAssistant
+            dawState={{
+              tracks: tracks.map((t) => ({
+                id: t.id,
+                name: t.name,
+                type: t.type,
+                volume: t.volume,
+                muted: t.muted,
+                solo: t.solo,
+                samplerAudioUrl: t.samplerAudioUrl ?? undefined,
+              })),
+              bpm,
+              metronomeEnabled,
+            }}
+            onActionsReceived={handleAIAssistantActions}
+          />
         </aside>
       </section>
 
       {/* Bottom mixer - made a bit taller */}
-      <footer className='h-52 border-t border-slate-800 bg-slate-950'>
-        <Mixer tracks={tracks} />
+      <footer className='h-52 border-t border-slate-800 bg-slate-950 shrink-0'>
+        <Mixer
+          tracks={tracks}
+          masterVolume={masterVolume}
+          onTrackVolumeChange={handleVolumeChange}
+          onMasterVolumeChange={handleMasterVolumeChange}
+        />
       </footer>
 
       {/* Track type selection dialog */}
