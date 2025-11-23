@@ -1,24 +1,24 @@
 // app/api/context/route.ts
-import { NextResponse } from "next/server";
 import {
-  HumanMessage,
   AIMessage,
-  ToolMessage,
+  HumanMessage,
   SystemMessage,
   trimMessages,
-} from "@langchain/core/messages";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { MemorySaver } from "@langchain/langgraph";
-import { tool } from "@langchain/core/tools";
-import path from "path";
-import * as z from "zod";
+  type BaseMessage,
+} from '@langchain/core/messages';
+import { tool } from '@langchain/core/tools';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { MemorySaver } from '@langchain/langgraph';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { NextResponse } from 'next/server';
+import path from 'path';
+import * as z from 'zod';
 
 // --- INTERNAL IMPORTS ---
-import { analyzeFromPath } from "./analyzeSongProcess";
-import { loadSongSpec, updateSongSpec, SongSpec } from "./SongSpecStore";
-import { generateProductionSpec } from "./productionSpec";
-import { addReferenceFromPath } from "./referenceManager";
+import { analyzeFromPath } from './analyzeSongProcess';
+import { generateProductionSpec } from './productionSpec';
+import { addReferenceFromPath } from './referenceManager';
+import { loadSongSpec, SongSpec, updateSongSpec } from './SongSpecStore';
 
 // Initialize Memory for conversation history
 const checkpointer = new MemorySaver();
@@ -35,7 +35,7 @@ const createUpdateSpecTool = (songId: string) =>
 
       if (input.mood) {
         updates.mood = Array.isArray(input.mood)
-          ? input.mood.join(", ")
+          ? input.mood.join(', ')
           : input.mood;
       }
 
@@ -50,7 +50,7 @@ const createUpdateSpecTool = (songId: string) =>
       return `Successfully updated SongSpec for ID ${songId}. New values saved to database.`;
     },
     {
-      name: "update_song_spec",
+      name: 'update_song_spec',
       description:
         "Call this tool to update the song's genre, mood, bpm, key, scale, instruments, or chords in the database. ONLY call this if the user explicitly asks to change something or if you have inferred a definite genre/mood from context.",
       schema: z.object({
@@ -78,13 +78,13 @@ const analyzeAudioTool = tool(
     try {
       const result = await analyzeFromPath(absPath);
       return JSON.stringify(result);
-    } catch (e) {
-      return "Error analyzing audio file. File might not exist.";
+    } catch {
+      return 'Error analyzing audio file. File might not exist.';
     }
   },
   {
-    name: "analyze_audio_reference",
-    description: "Analyze a specific audio file to get BPM, Key, and Energy.",
+    name: 'analyze_audio_reference',
+    description: 'Analyze a specific audio file to get BPM, Key, and Energy.',
     schema: z.object({
       filePath: z.string(),
     }),
@@ -95,10 +95,10 @@ const analyzeAudioTool = tool(
 const createCompleteSpecTool = () =>
   tool(
     async () => {
-      return "SongSpec marked as complete. The UI will now display the proceed button.";
+      return 'SongSpec marked as complete. The UI will now display the proceed button.';
     },
     {
-      name: "confirm_spec_completion",
+      name: 'confirm_spec_completion',
       description:
         "Call this tool IMMEDIATELY when the SongSpec is fully defined (Genre, Mood, BPM, Key, Instruments). This triggers the 'Next Step' button in the user interface.",
       schema: z.object({}),
@@ -116,39 +116,45 @@ function generateSystemPrompt(spec: SongSpec): string {
           .map((r, index) => {
             const name = r.sourcePath
               ? path.basename(r.sourcePath)
-              : "Unknown File";
+              : 'Unknown File';
             return `  ${index + 1}. "${name}" (Detected: ${r.bpm} BPM, ${
               r.key
             } ${r.scale})`;
           })
-          .join("\n")
-      : "  - None";
+          .join('\n')
+      : '  - None';
 
-  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? "unknown";
-  const key = spec.key ?? spec.aggregate?.key ?? "unknown";
-  const scale = spec.scale ?? spec.aggregate?.scale ?? "unknown";
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'unknown';
+  const key = spec.key ?? spec.aggregate?.key ?? 'unknown';
+  const scale = spec.scale ?? spec.aggregate?.scale ?? 'unknown';
 
-  const genre = spec.genre ?? "unknown";
+  const genre = spec.genre ?? 'unknown';
   const mood = Array.isArray(spec.mood)
-    ? spec.mood.join(", ")
-    : spec.mood ?? "unknown";
+    ? spec.mood.join(', ')
+    : spec.mood ?? 'unknown';
 
   const instruments =
     Array.isArray(spec.instruments) && spec.instruments.length > 0
-      ? spec.instruments.join(", ")
-      : "unknown";
+      ? spec.instruments.join(', ')
+      : 'unknown';
 
   const chords =
     spec.chordProgression && Array.isArray(spec.chordProgression.global)
-      ? spec.chordProgression.global.join(" → ")
-      : "unknown";
+      ? spec.chordProgression.global.join(' → ')
+      : 'unknown';
 
   const missingFields = [];
-  if (genre === "unknown") missingFields.push("Genre");
-  if (mood === "unknown") missingFields.push("Mood");
-  if (bpm === "unknown") missingFields.push("BPM");
-  if (key === "unknown") missingFields.push("Key");
-  if (instruments === "unknown") missingFields.push("Instruments");
+  if (genre === 'unknown') missingFields.push('Genre');
+  if (mood === 'unknown') missingFields.push('Mood');
+  if (bpm === 'unknown') missingFields.push('BPM');
+  if (key === 'unknown') missingFields.push('Key');
+  if (instruments === 'unknown') missingFields.push('Instruments');
+
+  // Build reference acknowledgment example for the prompt
+  const firstRefExample =
+    refCount > 0 && spec.references[0]
+      ? `Detected: ${spec.references[0].bpm} BPM, ${spec.references[0].key} ${spec.references[0].scale}`
+      : '';
 
   return `
 You are an expert AI Executive Music Producer. Your goal is to guide the user through creating a complete 'SongSpec' so we can start development.
@@ -168,15 +174,27 @@ ${referenceList}
 
 ### YOUR CORE DIRECTIVES:
 
+**0. ALWAYS READ CONTEXT FIRST (CRITICAL)**
+   - **BEFORE responding to ANY user message, you MUST:**
+     1. Read the "CURRENT PROJECT STATE" section above carefully
+     2. Acknowledge what you see, especially reference tracks that were just uploaded
+     3. If reference tracks are listed, explicitly mention them in your response (e.g., "I see you've uploaded [filename] with [BPM] BPM in [Key]")
+     4. If the user just uploaded files, acknowledge that you've processed them and can see their properties
+   - **NEVER say you don't have a reference file if one is listed in the CURRENT PROJECT STATE above**
+   - **NEVER say you don't know the context if it's clearly shown in the CURRENT PROJECT STATE above**
+
 **1. MEMORY & CONTEXT**
    - You have memory of this entire conversation. Refer back to things the user said earlier.
    - If the user provides a reference track, analyze what that implies for the missing fields.
+   - **Always acknowledge what you see in the CURRENT PROJECT STATE before asking questions or making suggestions**
 
 **2. THE "FILL-THE-BLANKS" STRATEGY**
    - Look at the "CURRENT PROJECT STATE" above.
    - If values are "unknown", you MUST proactively guide the user to define them.
    - Pick the most important missing field (Genre/Mood -> BPM/Key -> Instruments) and ask about it.
-   - **CRITICAL:** If a Reference Track is listed above (e.g., "beat.wav"), **DO NOT ask the user to upload it again.** It is already in the system. Instead, ask: "I see you uploaded [filename]. Is this the vibe you want for the final track?"
+   - **CRITICAL:** If a Reference Track is listed above (e.g., "beat.wav"), **DO NOT ask the user to upload it again.** It is already in the system. Instead, acknowledge it: "I see you uploaded [filename]${
+     firstRefExample ? ` (${firstRefExample})` : ''
+   }. Is this the vibe you want for the final track?"
 
 **3. TOOL USAGE & UPDATES**
    - **User Intent:** If the user explicitly answers a question (e.g., "Let's do 140 BPM"), call \`update_song_spec\`.
@@ -193,6 +211,7 @@ ${referenceList}
 ### TONE & STYLE
 - Be professional but creative.
 - Act like a collaborative partner.
+- Always acknowledge what you see in the context before responding.
 `;
 }
 
@@ -203,14 +222,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       prompt,
-      songId = "default",
+      songId = 'default',
       referenceFilePath,
       referenceFilePaths,
     } = body;
 
     if (!prompt) {
       return NextResponse.json(
-        { error: "prompt is required" },
+        { error: 'prompt is required' },
         { status: 400 }
       );
     }
@@ -225,11 +244,13 @@ export async function POST(req: Request) {
       filesToProcess.push(referenceFilePath);
     }
 
+    const uploadedFiles: string[] = [];
     if (filesToProcess.length > 0) {
       for (const fp of filesToProcess) {
         if (fp) {
           // Update the local 'spec' variable directly with the result of the addition
           spec = await addReferenceFromPath(songId, fp);
+          uploadedFiles.push(path.basename(fp));
         }
       }
 
@@ -249,14 +270,17 @@ export async function POST(req: Request) {
           // Reload local spec to ensure it has the production updates
           spec = await loadSongSpec(songId);
         } catch (err) {
-          console.error("Auto-production generation failed:", err);
+          console.error('Auto-production generation failed:', err);
         }
       }
     }
 
+    // Reload spec one final time to ensure we have the absolute latest state
+    spec = await loadSongSpec(songId);
+
     // 2. SETUP AGENT
     const model = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
+      model: 'gemini-2.5-flash',
       apiKey: process.env.GOOGLE_API_KEY,
       temperature: 0.7,
     });
@@ -270,14 +294,16 @@ export async function POST(req: Request) {
     // --- DYNAMIC STATE MODIFIER (Defined INSIDE handler to capture fresh 'spec') ---
     // This ensures the system prompt uses the 'spec' we just updated in memory,
     // avoiding any database read latency issues.
-    const stateModifier = async (state: any) => {
-      const systemPrompt = generateSystemPrompt(spec);
+    const stateModifier = async (state: { messages: unknown[] }) => {
+      // Reload spec inside stateModifier to get the absolute latest state
+      const currentSpec = await loadSongSpec(songId);
+      const systemPrompt = generateSystemPrompt(currentSpec);
 
-      const trimmed = await trimMessages(state.messages, {
-        strategy: "last",
+      const trimmed = await trimMessages(state.messages as BaseMessage[], {
+        strategy: 'last',
         maxTokens: 384,
-        startOn: "human",
-        endOn: ["human", "tool"],
+        startOn: 'human',
+        endOn: ['human', 'tool'],
         tokenCounter: (msgs) => msgs.length,
         includeSystem: false,
       });
@@ -293,9 +319,26 @@ export async function POST(req: Request) {
       stateModifier: stateModifier,
     });
 
-    // 3. RUN AGENT
+    // 3. BUILD ENHANCED PROMPT
+    // If files were just uploaded, enhance the prompt to make the agent aware
+    let enhancedPrompt = prompt;
+    if (uploadedFiles.length > 0) {
+      const fileList = uploadedFiles.map((f) => `"${f}"`).join(', ');
+      enhancedPrompt = `I just uploaded ${uploadedFiles.length} reference file(s): ${fileList}. 
+
+${prompt}
+
+IMPORTANT: Before responding, please acknowledge what you see in the current project state, especially the reference tracks that were just uploaded. Check the "CURRENT PROJECT STATE" section in your system prompt to see the uploaded files and their detected properties (BPM, Key, etc.).`;
+    } else {
+      // Even if no files were uploaded, instruct the agent to read the context
+      enhancedPrompt = `${prompt}
+
+IMPORTANT: Before responding, please check the "CURRENT PROJECT STATE" section in your system prompt to see the current state of the project, including any reference tracks, genre, mood, BPM, key, instruments, and chord progressions.`;
+    }
+
+    // 4. RUN AGENT
     const result = await agent.invoke(
-      { messages: [new HumanMessage(prompt)] },
+      { messages: [new HumanMessage(enhancedPrompt)] },
       { configurable: { thread_id: songId } }
     );
 
@@ -311,7 +354,7 @@ export async function POST(req: Request) {
         msg.tool_calls.length > 0
       ) {
         const hasCompletionCall = msg.tool_calls.some(
-          (tc) => tc.name === "confirm_spec_completion"
+          (tc) => tc.name === 'confirm_spec_completion'
         );
         if (hasCompletionCall) {
           canProceed = true;
@@ -333,11 +376,10 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
-    console.error("Error in POST /api/context:", error);
-    return NextResponse.json(
-      { error: error?.message ?? "Internal Server Error" },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error('Error in POST /api/context:', error);
+    const errorMessage =
+      error instanceof Error ? error.message : 'Internal Server Error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
