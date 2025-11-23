@@ -75,6 +75,7 @@ const analyzeAudioTool = tool(
       ? filePath
       : path.join(process.cwd(), filePath);
     try {
+      console.log("HIIIIII");
       const result = await analyzeFromPath(absPath);
       return JSON.stringify(result);
     } catch (e) {
