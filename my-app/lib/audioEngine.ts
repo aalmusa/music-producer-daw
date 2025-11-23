@@ -113,6 +113,82 @@ export function getTransportPosition(): string {
   return transport.position.toString();
 }
 
+export function setTransportPosition(progress: number) {
+  // Convert progress (0-1) to time within the loop
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
+  const targetSeconds = progress * loopDuration;
+  transport.seconds = targetSeconds;
+}
+
+export function rewindToStart() {
+  const wasPlaying = transport.state === 'started';
+  
+  if (wasPlaying) {
+    // If playing, stop and restart from position 0
+    transport.stop();
+    transport.seconds = 0;
+    transport.start();
+  } else {
+    // If not playing, just set position
+    transport.seconds = 0;
+  }
+}
+
+export function skipForwardBars(bars: number = 4) {
+  const wasPlaying = transport.state === 'started';
+  const barDuration = transport.toSeconds('1m');
+  const skipAmount = barDuration * bars;
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
+  const newPosition = (transport.seconds + skipAmount) % loopDuration;
+  
+  if (wasPlaying) {
+    // If playing, stop and restart from new position
+    transport.stop();
+    transport.seconds = newPosition;
+    transport.start();
+  } else {
+    // If not playing, just set position
+    transport.seconds = newPosition;
+  }
+}
+
+export function skipBackBars(bars: number = 4) {
+  const wasPlaying = transport.state === 'started';
+  const barDuration = transport.toSeconds('1m');
+  const skipAmount = barDuration * bars;
+  const loopDuration = transport.toSeconds(`${LOOP_BARS}m`);
+  let newPosition = transport.seconds - skipAmount;
+  
+  // If we go before 0, wrap to end of loop
+  if (newPosition < 0) {
+    newPosition = loopDuration + newPosition;
+  }
+  
+  if (wasPlaying) {
+    // If playing, stop and restart from new position
+    transport.stop();
+    transport.seconds = newPosition;
+    transport.start();
+  } else {
+    // If not playing, just set position
+    transport.seconds = newPosition;
+  }
+}
+
+export function togglePlayPause(): boolean {
+  if (transport.state === 'started') {
+    transport.pause();
+    return false; // Now paused
+  } else {
+    transport.start();
+    return true; // Now playing
+  }
+}
+
+export function isTransportPlaying(): boolean {
+  return transport.state === 'started';
+}
+
 export function toggleMetronome(): boolean {
   if (!metronomeLoop) return false;
 

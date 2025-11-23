@@ -12,13 +12,16 @@ import {
   setTrackVolume,
   toggleMetronome,
   updateMidiParts,
+  togglePlayPause,
+  rewindToStart,
+  skipForwardBars,
+  skipBackBars,
+  isTransportPlaying,
 } from '@/lib/audioEngine';
-import { AudioFile } from '@/lib/audioLibrary';
 import { createAudioClip, createEmptyMidiClip, Track } from '@/lib/midiTypes';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
 import AIAssistant from './AIAssistant';
-import AudioFilePicker from './AudioFilePicker';
 import Mixer from './Mixer';
 import Timeline from './Timeline';
 import TrackList from './TrackList';
@@ -45,9 +48,6 @@ export default function DawShell() {
   // Track type selection dialog state
   const [isTrackDialogOpen, setIsTrackDialogOpen] = useState(false);
 
-  // Audio file picker state
-  const [isAudioPickerOpen, setIsAudioPickerOpen] = useState(false);
-
   // BPM state
   const [bpm, setBpm] = useState(120);
 
@@ -62,6 +62,43 @@ export default function DawShell() {
 
   // Track data - Start with empty tracks for AI to populate
   const [tracks, setTracks] = useState<Track[]>([]);
+
+  // Keyboard shortcuts for transport controls
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          await initAudio();
+          togglePlayPause();
+          break;
+        case 'Home':
+          e.preventDefault();
+          await initAudio();
+          rewindToStart();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          await initAudio();
+          skipBackBars(4);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          await initAudio();
+          skipForwardBars(4);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
@@ -102,11 +139,37 @@ export default function DawShell() {
   }, []);
 
   const handleToggleSolo = useCallback((trackId: string) => {
-    setTracks((prev) =>
-      prev.map((track) =>
+    setTracks((prev) => {
+      // Toggle solo on the clicked track
+      const updatedTracks = prev.map((track) =>
         track.id === trackId ? { ...track, solo: !track.solo } : track
-      )
-    );
+      );
+
+      // Check if any track has solo enabled
+      const hasSoloTracks = updatedTracks.some((track) => track.solo);
+
+      // Apply mute logic based on solo state
+      updatedTracks.forEach((track) => {
+        if (hasSoloTracks) {
+          // If there are solo tracks, mute all non-solo tracks
+          const shouldBeMuted = !track.solo;
+          if (track.type === 'midi') {
+            setTrackMute(track.id, shouldBeMuted);
+          } else if (track.type === 'audio') {
+            setAudioLoopMute(track.id, shouldBeMuted);
+          }
+        } else {
+          // If no solo tracks, restore original mute state
+          if (track.type === 'midi') {
+            setTrackMute(track.id, track.muted);
+          } else if (track.type === 'audio') {
+            setAudioLoopMute(track.id, track.muted);
+          }
+        }
+      });
+
+      return updatedTracks;
+    });
   }, []);
 
   /**
@@ -157,37 +220,11 @@ export default function DawShell() {
     setIsTrackDialogOpen(false);
   }, [createTrackOfType]);
 
-  // User selected Audio from dialog - show file picker instead of creating immediately
+  // User selected Audio from dialog - create empty audio track
   const handleSelectAudio = useCallback(() => {
-    setIsAudioPickerOpen(true);
-    // Keep track dialog open in background - will close when user confirms
-  }, []);
-
-  // User selected an audio file from the picker
-  const handleAudioFileSelected = useCallback(
-    (audioFile: AudioFile) => {
-      const colorIndex = tracks.length % trackColors.length;
-
-      // Create a new audio track with a single clip at bar 0
-      const newTrack: Track = {
-        id: crypto.randomUUID(),
-        name: audioFile.name,
-        color: trackColors[colorIndex],
-        type: 'audio',
-        muted: false,
-        solo: false,
-        volume: 1,
-        audioClips: [createAudioClip(audioFile.path, 0, audioFile.name)],
-      };
-
-      setTracks((prev) => [...prev, newTrack]);
-
-      // Close both dialogs
-      setIsAudioPickerOpen(false);
-      setIsTrackDialogOpen(false);
-    },
-    [tracks.length]
-  );
+    createTrackOfType('audio');
+    setIsTrackDialogOpen(false);
+  }, [createTrackOfType]);
 
   // Attach a sample to a MIDI track
   const handleAttachSampleToMidiTrack = useCallback(
@@ -704,13 +741,6 @@ export default function DawShell() {
         onSelectMidi={handleSelectMidi}
         onSelectAudio={handleSelectAudio}
         onClose={() => setIsTrackDialogOpen(false)}
-      />
-
-      {/* Audio file picker dialog */}
-      <AudioFilePicker
-        isOpen={isAudioPickerOpen}
-        onSelectFile={handleAudioFileSelected}
-        onClose={() => setIsAudioPickerOpen(false)}
       />
     </main>
   );

@@ -174,10 +174,10 @@ export default function AudioClip({
         button.onclick = () => {
           if (label.includes('Delete')) {
             if (window.confirm('Delete this audio clip?')) {
-              action();
+              action?.();
             }
           } else {
-            action();
+            action?.();
           }
           menu.remove();
         };

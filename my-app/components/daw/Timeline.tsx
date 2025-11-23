@@ -5,6 +5,7 @@ import {
   getLoopProgress,
   LOOP_BARS,
   removeAudioLoopPlayer,
+  setTransportPosition,
   updateMidiParts,
 } from '@/lib/audioEngine';
 import {
@@ -272,6 +273,42 @@ export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeigh
     );
   };
 
+  // Copy/duplicate a MIDI clip to a new position
+  const handleCopyMidiClip = (
+    trackId: string,
+    clipId: string,
+    newStartBar: number
+  ) => {
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trackId) return track;
+
+        // Find the clip to copy
+        const clipToCopy = track.midiClips?.find((c) => c.id === clipId);
+        if (!clipToCopy) return track;
+
+        // Create a new clip with same MIDI data but different ID and position
+        const newClip: MidiClipData = {
+          id: crypto.randomUUID(),
+          startBar: newStartBar,
+          bars: clipToCopy.bars,
+          notes: clipToCopy.notes.map(note => ({
+            ...note,
+            id: crypto.randomUUID(), // Generate new IDs for notes too
+          })),
+        };
+
+        const existingClips = track.midiClips || [];
+        const updatedClips = [...existingClips, newClip];
+
+        // Update the audio engine with ALL clips for this track
+        updateMidiParts(trackId, updatedClips, track.samplerAudioUrl);
+
+        return { ...track, midiClips: updatedClips };
+      })
+    );
+  };
+
   // Duplicate a clip to the next available slot
   const handleDuplicateAudioClip = (trackId: string, clipId: string) => {
     const track = tracks.find((t) => t.id === trackId);
@@ -492,6 +529,9 @@ export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeigh
   const startYRef = useRef(0);
   const startHeightRef = useRef(96);
 
+  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const timelineRef = useRef<HTMLDivElement>(null);
+
   // Update playhead from Tone transport
   useEffect(() => {
     let frameId: number;
@@ -541,10 +581,54 @@ export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeigh
     setIsResizingTracks(true);
   };
 
+  // Handle playhead dragging
+  useEffect(() => {
+    if (!isDraggingPlayhead) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      
+      const rect = timelineRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const progress = Math.max(0, Math.min(1, x / rect.width));
+      
+      setTransportPosition(progress);
+      setPlayheadProgress(progress);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingPlayhead(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingPlayhead]);
+
+  const handlePlayheadMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingPlayhead(true);
+  };
+
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!timelineRef.current || isDraggingPlayhead) return;
+    
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const progress = Math.max(0, Math.min(1, x / rect.width));
+    
+    setTransportPosition(progress);
+    setPlayheadProgress(progress);
+  };
+
   return (
-    <div className='h-full w-full relative'>
+    <div className='h-full w-full relative' ref={timelineRef} onClick={handleTimelineClick}>
       {/* Time ruler at the top */}
-      <div className='h-12 border-b border-slate-800 bg-slate-950/80 sticky top-0 z-10 flex text-[10px] text-slate-400'>
+      <div className='h-12 border-b border-slate-800 bg-slate-950/80 sticky top-0 z-10 flex text-[10px] text-slate-400' onClick={(e) => e.stopPropagation()}>
         {Array.from({ length: measureCount }).map((_, i) => (
           <div
             key={i}
@@ -731,31 +815,97 @@ export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeigh
                   {getEmptySlots(track.id).map((startBar) => {
                     const slotLeftPercent = (startBar / measureCount) * 100;
                     const slotWidthPercent = (4 / measureCount) * 100;
+                    const hasExistingClips =
+                      (track.midiClips?.length ?? 0) > 0;
 
                     return (
-                      <button
+                      <div
                         key={`empty-midi-${startBar}`}
-                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-slate-600/70 flex items-center justify-center text-slate-600 hover:text-slate-400 transition-all cursor-pointer group'
+                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-slate-600/70 transition-all group'
                         style={{
                           left: `${slotLeftPercent}%`,
                           width: `${slotWidthPercent}%`,
                         }}
-                        onClick={() => handleAddClip(track.id, startBar)}
                       >
-                        <svg
-                          className='w-6 h-6 opacity-50 group-hover:opacity-100 transition-opacity'
-                          fill='none'
-                          stroke='currentColor'
-                          viewBox='0 0 24 24'
-                        >
-                          <path
-                            strokeLinecap='round'
-                            strokeLinejoin='round'
-                            strokeWidth={2}
-                            d='M12 4v16m8-8H4'
-                          />
-                        </svg>
-                      </button>
+                        <div className='h-full flex items-center justify-center gap-2'>
+                          {/* Add new clip button */}
+                          <button
+                            onClick={() => handleAddClip(track.id, startBar)}
+                            className='flex flex-col items-center text-slate-600 hover:text-slate-400 transition-colors px-2'
+                            title='Add new MIDI clip'
+                          >
+                            <svg
+                              className='w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity'
+                              fill='none'
+                              stroke='currentColor'
+                              viewBox='0 0 24 24'
+                            >
+                              <path
+                                strokeLinecap='round'
+                                strokeLinejoin='round'
+                                strokeWidth={2}
+                                d='M12 4v16m8-8H4'
+                              />
+                            </svg>
+                            <span className='text-[10px] font-medium'>
+                              New
+                            </span>
+                          </button>
+
+                          {/* Copy button with dropdown - only show if clips exist */}
+                          {hasExistingClips && (
+                            <>
+                              <div className='w-px h-8 bg-slate-700/50' />
+                              <div className='relative group/copy'>
+                                <button
+                                  className='flex flex-col items-center text-slate-600 hover:text-emerald-400 transition-colors px-2'
+                                  title='Copy existing MIDI clip'
+                                >
+                                  <svg
+                                    className='w-5 h-5 opacity-50 group-hover/copy:opacity-100 transition-opacity'
+                                    fill='none'
+                                    stroke='currentColor'
+                                    viewBox='0 0 24 24'
+                                  >
+                                    <path
+                                      strokeLinecap='round'
+                                      strokeLinejoin='round'
+                                      strokeWidth={2}
+                                      d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
+                                    />
+                                  </svg>
+                                  <span className='text-[10px] font-medium'>
+                                    Copy
+                                  </span>
+                                </button>
+
+                                {/* Dropdown for selecting which clip to copy */}
+                                <div className='absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded shadow-xl py-1 min-w-[140px] opacity-0 group-hover/copy:opacity-100 pointer-events-none group-hover/copy:pointer-events-auto transition-opacity z-50'>
+                                  <div className='text-xs text-slate-400 px-3 py-1 font-medium'>
+                                    Copy from:
+                                  </div>
+                                  {track.midiClips?.map((clip) => (
+                                    <button
+                                      key={clip.id}
+                                      onClick={() =>
+                                        handleCopyMidiClip(
+                                          track.id,
+                                          clip.id,
+                                          startBar
+                                        )
+                                      }
+                                      className='w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors'
+                                    >
+                                      Bar {clip.startBar + 1}-
+                                      {clip.startBar + clip.bars}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
 
@@ -789,9 +939,13 @@ export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeigh
 
       {/* Playhead line */}
       <div
-        className='pointer-events-none absolute top-12 bottom-0 w-px bg-emerald-400 z-40'
+        className='absolute top-12 bottom-0 w-px bg-emerald-400 z-40 cursor-ew-resize group'
         style={{ left: `${playheadProgress * 100}%` }}
-      />
+        onMouseDown={handlePlayheadMouseDown}
+      >
+        {/* Draggable handle at the top */}
+        <div className='absolute -top-3 left-1/2 -translate-x-1/2 w-3 h-3 bg-emerald-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize' />
+      </div>
 
       {/* Piano Roll Modal */}
       {editingTrack && editingClip && (
