@@ -1,5 +1,6 @@
 // referenceManager.ts
 
+import path from "path";
 import { analyzeFromPath } from "./analyzeSongProcess";
 import {
   loadSongSpec,
@@ -8,7 +9,6 @@ import {
   ReferenceAnalysis,
   AggregateAnalysis,
 } from "./SongSpecStore";
-import path from "path";
 
 let refCounter = 0;
 
@@ -17,8 +17,10 @@ function makeRefId() {
   return `ref-${refCounter}`;
 }
 
-// naive genre/mood extraction from your genreIdentifier output
-function extractGenresAndMoods(rawGenreResult: any): {
+// For now, we do not get structured genres or moods from the DSP layer.
+// The agent will infer genre and mood from the references and conversation.
+// Stub kept so you can plug in a classifier later if you want.
+function extractGenresAndMoods(_rawGenreResult: any): {
   genres: string[];
   moods: string[];
 } {
@@ -40,12 +42,13 @@ function computeAggregate(
   const bpmMin = bpms.length ? Math.min(...bpms) : 0;
   const bpmMax = bpms.length ? Math.max(...bpms) : 0;
 
-  // key+scale: majority vote
+  // key + scale majority vote, weighted by strength
   const keyMap = new Map<string, number>();
   for (const r of references) {
     const combo = `${r.key}_${r.scale}`;
-    keyMap.set(combo, (keyMap.get(combo) ?? 0) + r.strength);
+    keyMap.set(combo, (keyMap.get(combo) ?? 0) + (r.strength ?? 1));
   }
+
   let bestKeyCombo = "C_major";
   let bestScore = -Infinity;
   for (const [combo, score] of keyMap) {
@@ -56,7 +59,7 @@ function computeAggregate(
   }
   const [bestKey, bestScale] = bestKeyCombo.split("_");
 
-  // merged genres and moods (dedup, down to ~5 each)
+  // merged genres and moods (dedup)
   const allGenres = Array.from(
     new Set(references.flatMap((r) => r.genres ?? []))
   );
@@ -85,8 +88,8 @@ export async function addReferenceFromPath(
     ? filePath
     : path.join(process.cwd(), filePath);
 
+  // analyzeFromPath now returns { genre: null, analysis }
   const { genre: rawGenreResult, analysis } = await analyzeFromPath(absPath);
-
   const { genres, moods } = extractGenresAndMoods(rawGenreResult);
 
   const ref: ReferenceAnalysis = {
@@ -104,14 +107,14 @@ export async function addReferenceFromPath(
   const newReferences = [...spec.references, ref];
   const aggregate = computeAggregate(newReferences);
 
-  // When references are added, update BPM and key from aggregate analysis
-  // This calculates new values from all references and updates the spec
   const updated: SongSpec = {
     ...spec,
     references: newReferences,
     aggregate,
-    // Update BPM and key from aggregate when references are added
-    // If user later explicitly sets these, those values will override (handled in route.ts)
+    // Let aggregate drive bpm/key/scale when references exist.
+    // If the user explicitly overrides these later in chat,
+    // route.ts will write those values, and they will be used
+    // until the next time a reference analysis is added.
     bpm: aggregate ? aggregate.bpm : spec.bpm,
     key: aggregate ? aggregate.key : spec.key,
     scale: aggregate ? aggregate.scale : spec.scale,
@@ -119,8 +122,6 @@ export async function addReferenceFromPath(
   };
 
   await saveSongSpec(updated);
-  console.log(
-    `✅ Added reference, updated BPM: ${updated.bpm}, Key: ${updated.key} from aggregate analysis`
-  );
+
   return updated;
 }

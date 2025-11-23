@@ -6,18 +6,6 @@ import wav from "node-wav";
 import { EssentiaWASM } from "essentia.js/dist/essentia-wasm.es";
 import EssentiaExtractor from "essentia.js/dist/essentia.js-extractor.es";
 
-import * as tf from "@tensorflow/tfjs";
-import {
-  TensorflowMusiCNN,
-  EssentiaTFInputExtractor,
-} from "essentia.js/dist/essentia.js-model.es";
-
-// If you deploy, set MUSICNN_MODEL_URL in env to your real domain.
-// Locally this will hit the Next dev server on :3000.
-const MUSICNN_MODEL_URL =
-  process.env.MUSICNN_MODEL_URL ||
-  "http://localhost:3000/models/msd-musicnn-1/model.json";
-
 // Save uploaded file and convert it to wav, return final path
 export const writeToDrive = async (file: File): Promise<string> => {
   const name = file.name;
@@ -54,9 +42,16 @@ export const writeToDrive = async (file: File): Promise<string> => {
 Tempo: BeatTrackerDegara → bpm
 Key,Scale: KeyExtractor → key + scale
 Energy: BeatsLoudness → energy segments
-mood,genre: MusiCNN model
-Instrument & Chord Progression: LLM
+Genre / mood: handled by the LLM for now (no MusiCNN in Node)
 */
+
+type EnergyBand = "low" | "medium" | "high";
+
+type EnergySegment = {
+  startTime: number;
+  endTime: number;
+  band: EnergyBand;
+};
 
 const analyzeSong = async (filePath: string) => {
   // Use the wasm module or its default export
@@ -87,7 +82,7 @@ const analyzeSong = async (filePath: string) => {
   // Essentia vector
   const signalVec = essentia.arrayToVector(monoAudioData);
 
-  // beats
+  // ---- 1. Beats / BPM ----
   let beats: { ticks: number[] };
 
   try {
@@ -121,7 +116,7 @@ const analyzeSong = async (filePath: string) => {
   } catch (error: any) {
     console.error("BeatTrackerDegara error:", error);
     console.error("signalVec constructor:", signalVec?.constructor?.name);
-    throw new Error(`Failed to analyze beats: ${error.message}`);
+    throw new Error(`Failed to analyze beats: ${String(error)}`);
   }
 
   const tickCount = beats.ticks.length;
@@ -133,135 +128,109 @@ const analyzeSong = async (filePath: string) => {
     bpm = (numIntervals * 60) / beatSpan;
   }
 
-  // key and scale
-  const keyAndScale: {
+  // ---- 2. Key + scale ----
+  let keyAndScale: {
     key: string;
     scale: "major" | "minor" | string;
     strength: number;
-  } = essentia.KeyExtractor(signalVec);
-
-  // loudness and energy flow
-  const beatsLoudness: {
-    loudness: Float32Array | number[];
-    loudnessBandRatio: Array<number[]>;
-  } = essentia.BeatsLoudness(
-    signalVec,
-    undefined,
-    undefined,
-    beats.ticks,
-    undefined,
-    sampleRate
-  );
-
-  const loudnessArray = Array.isArray(beatsLoudness.loudness)
-    ? (beatsLoudness.loudness as number[])
-    : Array.from(beatsLoudness.loudness as Float32Array);
-
-  const minL = Math.min(...loudnessArray);
-  const maxL = Math.max(...loudnessArray);
-  const range = maxL - minL || 1;
-
-  const norm = loudnessArray.map((v) => (v - minL) / range);
-
-  type EnergyBand = "low" | "medium" | "high";
-
-  const bandFor = (x: number): EnergyBand =>
-    x < 0.33 ? "low" : x < 0.66 ? "medium" : "high";
-
-  const bands: EnergyBand[] = norm.map(bandFor);
-
-  type EnergySegment = {
-    startTime: number;
-    endTime: number;
-    band: EnergyBand;
   };
 
-  const groupedRange: EnergySegment[] = [];
+  try {
+    keyAndScale = essentia.KeyExtractor(signalVec) as {
+      key: string;
+      scale: "major" | "minor" | string;
+      strength: number;
+    };
+  } catch (err: any) {
+    console.error("KeyExtractor error:", err);
+    // Fallback so we do not crash the whole request
+    keyAndScale = { key: "C", scale: "major", strength: 0 };
+  }
 
-  bands.forEach((val, index) => {
-    const t = beats.ticks[index];
+  // ---- 3. Loudness → energy segments ----
+  let energySegments: EnergySegment[] = [];
 
-    if (index === 0) {
-      groupedRange.push({
-        startTime: t,
-        endTime: t,
-        band: val,
-      });
-      return;
-    }
+  try {
+    const beatsLoudness: {
+      loudness: Float32Array | number[];
+      loudnessBandRatio: Array<number[]>;
+    } = essentia.BeatsLoudness(
+      signalVec,
+      undefined,
+      undefined,
+      beats.ticks,
+      undefined,
+      sampleRate
+    );
 
-    const last = groupedRange[groupedRange.length - 1];
+    const loudnessArray = Array.isArray(beatsLoudness.loudness)
+      ? (beatsLoudness.loudness as number[])
+      : Array.from(beatsLoudness.loudness as Float32Array);
 
-    if (val === last.band) {
-      groupedRange[groupedRange.length - 1] = {
-        ...last,
-        endTime: t,
-      };
-    } else {
-      groupedRange.push({
-        startTime: t,
-        endTime: t,
-        band: val,
-      });
-    }
-  });
+    const minL = Math.min(...loudnessArray);
+    const maxL = Math.max(...loudnessArray);
+    const range = maxL - minL || 1;
+
+    const norm = loudnessArray.map((v) => (v - minL) / range);
+
+    const bandFor = (x: number): EnergyBand =>
+      x < 0.33 ? "low" : x < 0.66 ? "medium" : "high";
+
+    const bands: EnergyBand[] = norm.map(bandFor);
+
+    const groupedRange: EnergySegment[] = [];
+
+    bands.forEach((val, index) => {
+      const t = beats.ticks[index];
+
+      if (index === 0) {
+        groupedRange.push({
+          startTime: t,
+          endTime: t,
+          band: val,
+        });
+        return;
+      }
+
+      const last = groupedRange[groupedRange.length - 1];
+
+      if (val === last.band) {
+        groupedRange[groupedRange.length - 1] = {
+          ...last,
+          endTime: t,
+        };
+      } else {
+        groupedRange.push({
+          startTime: t,
+          endTime: t,
+          band: val,
+        });
+      }
+    });
+
+    energySegments = groupedRange;
+  } catch (err: any) {
+    console.error("BeatsLoudness error:", err);
+    // Leave energySegments as empty array
+    energySegments = [];
+  }
 
   return {
     bpm,
     key: keyAndScale.key,
     scale: keyAndScale.scale,
     strength: keyAndScale.strength,
-    energySegments: groupedRange,
+    energySegments,
   };
 };
 
-const genreIdentifier = async (filePath: string) => {
-  const wavBuffer = await fs.readFile(filePath);
-  const result = wav.decode(wavBuffer);
-  const channelData = result.channelData;
-
-  const monoAudioData =
-    channelData.length === 1
-      ? channelData[0]
-      : Float32Array.from(
-          { length: channelData[0].length },
-          (_, i) =>
-            channelData.reduce((sum, channel) => sum + channel[i], 0) /
-            channelData.length
-        );
-
-  // For EssentiaTFInputExtractor, use the WASM module
-  let wasmModuleForTF: any = EssentiaWASM;
-  if (
-    EssentiaWASM &&
-    typeof EssentiaWASM === "object" &&
-    "default" in EssentiaWASM
-  ) {
-    wasmModuleForTF = (EssentiaWASM as any).default;
-  }
-
-  const tfExtractor = new EssentiaTFInputExtractor(wasmModuleForTF, "musicnn");
-
-  // Docs expect raw audio (Float32Array), not an Essentia vector
-  const features = tfExtractor.computeFrameWise(monoAudioData, 256);
-
-  // Load TFJS model from HTTP URL, not from a filesystem path
-  const modelCNN = new TensorflowMusiCNN(tf, MUSICNN_MODEL_URL);
-
-  await modelCNN.initialize();
-
-  // zeroPadding = true
-  return await modelCNN.predict(features as any, true);
-};
-
+// High-level MusiCNN genre model is disabled for now.
+// We only return low-level analysis and let the LLM infer genre / mood.
 export const analyzeFromPath = async (filePath: string) => {
-  const [genreResult, analysisResult] = await Promise.all([
-    genreIdentifier(filePath),
-    analyzeSong(filePath),
-  ]);
+  const analysisResult = await analyzeSong(filePath);
 
   return {
-    genre: genreResult,
+    genre: null, // placeholder, not used while MusiCNN is off
     analysis: analysisResult,
   };
 };

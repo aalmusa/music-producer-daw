@@ -1,3 +1,4 @@
+// app/api/context/route.ts
 import { NextResponse } from "next/server";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -16,19 +17,21 @@ const conversationModel = new ChatGoogleGenerativeAI({
   temperature: 0.8,
 });
 
+// Optional tool, available to agents if you wire tools up later
 export const getReferenceSongContext = tool(
   async ({ filePath }: { filePath: string }) => {
     const absPath = path.isAbsolute(filePath)
       ? filePath
       : path.join(process.cwd(), filePath);
 
+    // Only returns audio analysis (bpm, key, energy segments)
     const result = await analyzeFromPath(absPath);
     return result;
   },
   {
     name: "song_analysis",
     description:
-      "Analyze a reference audio file and return combined results: genre prediction and audio analysis (bpm, key, energySegments). Input is the path to the audio file.",
+      "Analyze a reference audio file and return audio analysis (bpm, key, energySegments). Genre is left null and should be inferred by the assistant. Input is the path to the audio file.",
     schema: z.object({
       filePath: z
         .string()
@@ -38,6 +41,42 @@ export const getReferenceSongContext = tool(
     }),
   }
 );
+
+// Helper to give the model a readable summary of the current spec
+function summarizeSpecForPrompt(spec: SongSpec): string {
+  const refCount = spec.references?.length ?? 0;
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? "unknown";
+  const key = spec.key ?? spec.aggregate?.key ?? "unknown";
+  const scale = spec.scale ?? spec.aggregate?.scale ?? "unknown";
+
+  const genre = spec.genre ?? "none yet";
+
+  const mood = Array.isArray(spec.mood)
+    ? spec.mood.join(", ")
+    : spec.mood ?? "none yet";
+
+  const instruments =
+    Array.isArray(spec.instruments) && spec.instruments.length > 0
+      ? spec.instruments.join(", ")
+      : "none yet";
+
+  const chords =
+    spec.chordProgression && Array.isArray(spec.chordProgression.global)
+      ? spec.chordProgression.global.join(" → ")
+      : "none yet";
+
+  return `
+Current song summary:
+- ID: ${spec.id}
+- References: ${refCount}
+- Current BPM: ${bpm}
+- Current Key: ${key} ${scale}
+- Current Genre: ${genre}
+- Current Mood: ${mood}
+- Current Instruments: ${instruments}
+- Current Global Chord Progression: ${chords}
+`;
+}
 
 export async function POST(req: Request) {
   try {
@@ -61,7 +100,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Load current spec (with references[])
+    // 1. Load current spec
     let spec = await loadSongSpec(songId);
 
     // 2. If new reference file paths are provided, add them as references
@@ -100,38 +139,61 @@ export async function POST(req: Request) {
       console.log("Generated production spec:", updates);
     }
 
-    // 4. Construct system prompt
+    // 4. Construct system prompt with strong grounding rules
     const systemPrompt = `
 You are an AI assistant that helps the user define a SongSpec for a new track.
 
-You already have a current SongSpec (below). Use it as context.
+You already have a current SongSpec. Use it as the single source of truth for current values.
+
+${summarizeSpecForPrompt(spec)}
+
 The SongSpec may include:
 - multiple reference analyses (under "references")
 - an aggregate analysis (under "aggregate") with computed BPM, key, scale from references
-- LLM-suggested instruments and chordProgression
+- LLM suggested instruments and chordProgression
 
-IMPORTANT RULES:
-1. Genre and Mood: User can explicitly set these. If user mentions genre or mood, include it in the JSON.
-2. BPM and Key: 
-   - If reference files exist: These are calculated from aggregate analysis (already in spec).
-   - If NO reference files but genre/mood exist: The system will automatically generate BPM/key/instruments/chords from genre/mood.
-   - If the user EXPLICITLY mentions BPM or key (for example "make it 120 BPM" or "change to C major"), include it in the JSON to override.
-3. Instruments and Chord Progression: The system automatically generates these from references (if available) or from genre/mood (if no references).
-   - You can mention what was generated in your response, but do not include them in JSON unless user explicitly changes them.
+IMPORTANT RULES (GROUNDING):
 
-Your job in this message:
-- Respond conversationally to the user's prompt.
-- If the user changes any fields (genre, mood, bpm, key), state clearly what changed.
-- If the user asks about instruments or harmony, refer to the current instruments and chord progression already in the SongSpec.
-- If references exist, use the aggregate analysis to inform your suggestions for BPM, key, and scale.
+1. Ground truth from SongSpec:
+   - Whenever you mention the current BPM, key, scale, instruments, chord progression,
+     references, or aggregate values, you MUST read them from the Current SongSpec JSON below.
+   - If a field is missing in the SongSpec, you must say that it is missing. Do not guess numeric values,
+     instruments, or chords.
 
-CRITICAL: Always include at the end of your reply a JSON block labeled "SongSpec" with the updated SongSpec you think should be saved. 
-- Include genre and mood if user mentions them.
-- Include bpm and key ONLY if user explicitly mentions them (do not auto-set from aggregate unless user asks).
-- Preserve existing fields (references, aggregate) from the current spec. Only update the fields that changed.
+2. Genre and Mood:
+   - You may infer genre and mood from the user's description and from the reference analyses.
+   - If you infer or change genre or mood, include them in the JSON and clearly mention what you changed
+     in your natural language reply.
 
-Current SongSpec:
-${JSON.stringify(spec, null, 2)}
+3. BPM and Key:
+   - The current BPM, key, and scale are whatever is stored in the SongSpec.
+   - If the user asks questions such as "What is the BPM?" or "What key is this in?",
+     you must answer by reading the existing values from the SongSpec. Do not design a new value.
+   - You are allowed to change BPM or key only if the user explicitly asks you to set or change them,
+     for example "set the BPM to 120", "change it to C major", or "make it faster at around 130 BPM".
+   - If you change BPM or key because the user asked you to, include the new values in the JSON and clearly
+     state the change.
+
+4. Instruments and Chord Progression:
+   - The current instruments and chord progression are whatever is stored in the SongSpec.
+   - If the user asks "what instruments are we using?" or "what is the current chord progression?",
+     you MUST answer by reading the values from the SongSpec. Do not invent new lists unless the user
+     explicitly asks you to change them.
+   - You are allowed to change instruments or chordProgression only if the user explicitly asks you to modify them,
+     for example "add strings", "replace the piano with a synth", or "change the chords to ii–V–I".
+   - If you change instruments or chordProgression because the user asked you to, include the updated values in the JSON
+     and clearly state the change in your reply.
+
+FORMATTING RULES (VERY IMPORTANT):
+
+- Your natural language reply should be concise and should NOT dump the full SongSpec JSON.
+- Do NOT include any \`references\` or \`aggregate\` fields in the JSON you output.
+- At the very end of your reply, output a small JSON block labelled \`SongSpec\` with ONLY the fields that changed
+  or that you are explicitly setting. Allowed keys in this JSON are:
+  \`genre\`, \`mood\`, \`bpm\`, \`key\`, \`scale\`, \`instruments\`, \`chordProgression\`.
+- The JSON block MUST be valid JSON and must not contain comments or trailing commas.
+
+
 `;
 
     const messages = [
@@ -159,6 +221,7 @@ ${JSON.stringify(spec, null, 2)}
 
         const updates: Partial<SongSpec> = {};
 
+        // Genre and mood can be inferred or changed by the model
         if (
           parsedSpec.genre !== undefined &&
           parsedSpec.genre !== null &&
@@ -174,6 +237,7 @@ ${JSON.stringify(spec, null, 2)}
           updates.mood = parsedSpec.mood;
         }
 
+        // BPM and key: only updated when model explicitly sets them
         if (
           parsedSpec.bpm !== undefined &&
           parsedSpec.bpm !== null &&
@@ -197,6 +261,7 @@ ${JSON.stringify(spec, null, 2)}
           updates.scale = parsedSpec.scale;
         }
 
+        // Instruments and chord progression: only when explicitly changed
         if (parsedSpec.instruments !== undefined) {
           updates.instruments = parsedSpec.instruments;
         }
@@ -235,7 +300,6 @@ ${JSON.stringify(spec, null, 2)}
   } catch (error: any) {
     console.error("Error in POST /api/context:", error);
 
-    // Important: do not use NextResponse.error here
     return NextResponse.json(
       {
         error: error?.message ?? "Internal Server Error",
