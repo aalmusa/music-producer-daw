@@ -12,6 +12,7 @@ interface TrackListProps {
   onAddTrack?: () => void;
   onDeleteTrack?: (trackId: string) => void;
   onAttachSample?: (trackId: string, audioPath: string | null) => void;
+  onRenameTrack?: (trackId: string, newName: string) => void;
 }
 
 export default function TrackList({
@@ -21,11 +22,32 @@ export default function TrackList({
   onAddTrack,
   onDeleteTrack,
   onAttachSample,
+  onRenameTrack,
 }: TrackListProps) {
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
   const [samplerDropdownOpen, setSamplerDropdownOpen] = useState<string | null>(
     null
   );
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+
+  const handleStartRename = (trackId: string, currentName: string) => {
+    setEditingTrackId(trackId);
+    setEditingName(currentName);
+  };
+
+  const handleFinishRename = (trackId: string) => {
+    if (editingName.trim() && editingName !== tracks.find(t => t.id === trackId)?.name) {
+      onRenameTrack?.(trackId, editingName.trim());
+    }
+    setEditingTrackId(null);
+    setEditingName('');
+  };
+
+  const handleCancelRename = () => {
+    setEditingTrackId(null);
+    setEditingName('');
+  };
 
   return (
     <div className='h-full flex flex-col'>
@@ -49,9 +71,32 @@ export default function TrackList({
                 <div className={`w-2 h-8 rounded-full mr-2 ${track.color}`} />
                 <div className='flex flex-col flex-1 min-w-0'>
                   <div className='flex items-center gap-2'>
-                    <span className='font-medium text-slate-100 truncate'>
-                      {track.name}
-                    </span>
+                    {editingTrackId === track.id ? (
+                      <input
+                        type='text'
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={() => handleFinishRename(track.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleFinishRename(track.id);
+                          } else if (e.key === 'Escape') {
+                            handleCancelRename();
+                          }
+                        }}
+                        autoFocus
+                        className='font-medium text-slate-100 bg-slate-800 border border-emerald-500 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 min-w-0 flex-1'
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span
+                        className='font-medium text-slate-100 truncate cursor-pointer hover:text-emerald-400 transition-colors'
+                        onClick={() => handleStartRename(track.id, track.name)}
+                        title='Click to rename'
+                      >
+                        {track.name}
+                      </span>
+                    )}
                     <span className='text-[8px] text-slate-500 uppercase'>
                       {track.type}
                     </span>
