@@ -1,50 +1,76 @@
 {
   "id": "default",
-  "references": [],
-  "createdAt": "2025-11-23T06:40:41.745Z",
-  "updatedAt": "2025-11-23T07:36:27.810Z",
-  "bpm": 120,
-  "key": "Gb",
+  "references": [
+    {
+      "id": "ref-1",
+      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763882325756-Love Songs (Bonus).mp3.wav",
+      "bpm": 110.31187926153204,
+      "key": "F",
+      "scale": "major",
+      "strength": 0.9093865752220154,
+      "energySegments": [],
+      "genres": [],
+      "moods": []
+    }
+  ],
+  "createdAt": "2025-11-23T07:18:46.949Z",
+  "updatedAt": "2025-11-23T07:18:58.674Z",
+  "aggregate": {
+    "bpm": 110,
+    "key": "F",
+    "scale": "major",
+    "bpmRange": [
+      110.31187926153204,
+      110.31187926153204
+    ],
+    "keysConsidered": [
+      "F_major"
+    ],
+    "genres": [],
+    "moods": []
+  },
+  "bpm": 110,
+  "key": "F",
   "scale": "major",
-  "genre": "Hip Hop",
   "instruments": [
     "Drums",
     "Bass Guitar",
-    "Electric Guitar",
-    "Electric Guitar",
-    "Organ"
+    "Piano",
+    "Strings",
+    "Acoustic Guitar"
   ],
   "chordProgression": {
     "global": [
-      "Gm",
-      "Eb",
-      "Bb",
-      "F"
+      "Fmaj7",
+      "Dm7",
+      "Gm7",
+      "C7"
     ],
     "bySection": {
       "intro": [
-        "Gm",
-        "Eb",
-        "Gm",
-        "Eb"
+        "Fmaj7",
+        "Dm7",
+        "Gm7",
+        "C7"
       ],
       "verse": [
-        "Gm",
-        "Eb",
-        "Bb",
-        "F"
+        "Fmaj7",
+        "Dm7",
+        "Gm7",
+        "C7"
       ],
       "chorus": [
-        "Bb",
-        "F",
-        "Gm",
-        "Eb"
+        "Bbmaj7",
+        "Fmaj7/A",
+        "Gm7",
+        "C7"
       ],
       "bridge": [
-        "Cm",
-        "F",
-        "D7",
-        "Gm"
+        "Am7",
+        "Dm7",
+        "Gm7",
+        "C7sus4",
+        "C7"
       ]
     }
   }
