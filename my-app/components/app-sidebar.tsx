@@ -15,8 +15,8 @@ import { useSongSpec } from "@/lib/song-spec-context"
 
 // Default configuration
 const defaultConfig = {
-  bpm: 120,
-  key: "C Major",
+  bpm: 0,
+  key: "unknown",
   genre: "Unknown",
 }
 
