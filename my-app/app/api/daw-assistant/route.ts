@@ -10,10 +10,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 // Initialize the LLM with function calling
+// Lower temperature for more deterministic tool calling behavior
 const llm = new ChatGoogleGenerativeAI({
   model: 'gemini-2.5-flash',
   apiKey: process.env.GOOGLE_API_KEY,
-  temperature: 0.7,
+  temperature: 0.3, // Lower temperature for more consistent tool usage
 });
 
 // Define tools for the DAW assistant
@@ -263,6 +264,35 @@ const tools = [
 ];
 
 /**
+ * Detect if user message is requesting an action (vs just asking a question)
+ */
+function isActionRequest(message: string): boolean {
+  const actionKeywords = [
+    'create',
+    'add',
+    'make',
+    'set',
+    'adjust',
+    'change',
+    'delete',
+    'remove',
+    'mute',
+    'unmute',
+    'solo',
+    'turn on',
+    'turn off',
+    'enable',
+    'disable',
+    'build',
+    'generate',
+    'put',
+    'place',
+  ];
+  const lowerMessage = message.toLowerCase();
+  return actionKeywords.some((keyword) => lowerMessage.includes(keyword));
+}
+
+/**
  * DAW Assistant Agent with Tool Calling
  *
  * This agent helps users with their DAW workflow by:
@@ -275,12 +305,26 @@ const tools = [
 async function dawAssistantAgent(
   message: string,
   dawState: DAWAssistantRequest['dawState'],
-  userContext?: string
+  userContext?: string,
+  retryCount = 0
 ): Promise<DAWAssistantResponse> {
   try {
     // Build the system prompt with current DAW state
+    const isAction = isActionRequest(message);
+    const actionEmphasis = isAction
+      ? `\n⚠️ CRITICAL: The user is requesting an ACTION. You MUST call the appropriate tool(s) to perform the action. DO NOT just describe what you will do - actually call the tool(s) now!\n`
+      : '';
+
     const systemPrompt = `You are an expert music production assistant integrated into a Digital Audio Workstation (DAW). 
-Use the provided tools to help users create and organize their music projects.
+Your primary job is to PERFORM ACTIONS when users request them, not just describe what you would do.
+
+${actionEmphasis}
+
+**CRITICAL RULES:**
+1. When a user requests an action (create, add, make, set, adjust, delete, mute, etc.), you MUST call the appropriate tool(s) immediately
+2. DO NOT respond with text like "I'll create a track" - instead, CALL THE TOOL to actually create it
+3. Only provide conversational responses when the user is asking questions or seeking advice
+4. If you're unsure which tool to use, choose the most appropriate one based on the user's intent
 
 **Current DAW State:**
 - BPM: ${dawState.bpm}
@@ -312,34 +356,43 @@ ${
 
 ${userContext ? `**User Context:** ${userContext}` : ''}
 
-**Available Tools:**
-- create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap)
+**Available Tools (USE THESE TO PERFORM ACTIONS):**
+- create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap). USE THIS when user wants a track with a specific instrument.
 - create_empty_track: Create an empty MIDI track (when you want to ask user what instrument they want)
-- adjust_bpm: Change the project tempo
-- adjust_volume: Adjust volume of a specific track
-- delete_track: Delete a track
-- mute_tracks: Mute tracks by pattern
-- unmute_tracks: Unmute tracks by pattern
-- toggle_metronome: Turn metronome on/off
+- adjust_bpm: Change the project tempo. USE THIS when user asks to change BPM or tempo.
+- adjust_volume: Adjust volume of a specific track. USE THIS when user wants to change track volume.
+- delete_track: Delete a track. USE THIS when user wants to remove a track.
+- mute_tracks: Mute tracks by pattern. USE THIS when user wants to mute tracks.
+- unmute_tracks: Unmute tracks by pattern. USE THIS when user wants to unmute tracks.
+- toggle_metronome: Turn metronome on/off. USE THIS when user wants to enable/disable metronome.
 
 **Instrument Mapping:**
 - Piano, Keyboard → instrument: "piano"
-- Bass, Sub Bass → instrument: "bass"
+- Bass, Sub Bass, Kick Drum → instrument: "bass"
 - Guitar (lead), Lead → instrument: "lead"
-- Kick Drum → instrument: "bass" (deep and punchy)
 - Pad, Atmosphere → instrument: "pad"
 - Bells, Chimes → instrument: "bells"
 - Strings, Pluck → instrument: "pluck"
 - Hi-hat → instrument: "hihat"
 - Clap → instrument: "clap"
 
+**Examples of CORRECT behavior:**
+- User: "Create a piano track" → You MUST call create_track_with_instrument with trackName="Piano", instrument="piano"
+- User: "Add a bass track" → You MUST call create_track_with_instrument with trackName="Bass", instrument="bass"
+- User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
+- User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
+
+**Examples of INCORRECT behavior (DO NOT DO THIS):**
+- User: "Create a piano track" → ❌ WRONG: "I'll create a piano track for you" (without calling tool)
+- User: "Add a bass track" → ❌ WRONG: "Sure, I can add a bass track" (without calling tool)
+
 **Guidelines:**
 - When user requests specific instruments, use create_track_with_instrument tool multiple times (once per track)
 - For house beats, typically use: kick (bass), bass, hihat, clap, and set BPM to 120-128
-- Be conversational and provide helpful suggestions
+- Be conversational in your text response AFTER calling tools, but ALWAYS call tools first for action requests
 - If user doesn't specify instrument, use create_empty_track and ask them what they want
 
-Now help the user with their request. Be friendly and helpful!`;
+Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
     // Bind tools to the LLM
     const llmWithTools = llm.bindTools(tools);
@@ -430,6 +483,17 @@ Now help the user with their request. Be friendly and helpful!`;
           "I understood your request but couldn't format the response properly. Please try again.";
       }
     } else {
+      // No tool calls and no JSON fallback
+      // Check if this was an action request - if so, retry with stronger prompt
+      if (isActionRequest(message) && retryCount === 0) {
+        console.log(
+          '⚠️ Action requested but no tools called. Retrying with stronger prompt...'
+        );
+        // Retry with a more explicit prompt
+        const retryPrompt = `${message}\n\nIMPORTANT: You must call the appropriate tool(s) to perform this action. Do not just describe what you will do - actually call the tool(s) now.`;
+        return dawAssistantAgent(retryPrompt, dawState, userContext, 1);
+      }
+
       // Pure conversational response with no actions
       suggestions = [
         'Create more tracks',
