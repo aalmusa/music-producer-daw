@@ -1,6 +1,15 @@
 'use client';
 
-import { removeAllAudioLoopPlayers, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
+import {
+  removeAllAudioLoopPlayers,
+  removeMidiTrack,
+  setBpm as setAudioEngineBpm,
+  setAudioLoopMute,
+  setAudioLoopVolume,
+  setTrackMute,
+  setTrackVolume,
+  updateMidiParts,
+} from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
@@ -8,14 +17,27 @@ import {
   createDemoMidiClip,
   createEmptyMidiClip,
 } from '@/lib/midiTypes';
+import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
+import AIAssistant from './AIAssistant';
 import AudioFilePicker from './AudioFilePicker';
 import Mixer from './Mixer';
-import RightSidebar from './RightSideBar';
 import Timeline from './Timeline';
 import TrackList from './TrackList';
-import TransportBar from './TransportBar';
 import TrackTypeDialog from './TrackTypeDialog';
+import TransportBar from './TransportBar';
+
+// Color palette for tracks
+const trackColors = [
+  'bg-emerald-500',
+  'bg-blue-500',
+  'bg-purple-500',
+  'bg-pink-500',
+  'bg-yellow-500',
+  'bg-red-500',
+  'bg-cyan-500',
+  'bg-indigo-500',
+];
 
 export default function DawShell() {
   // Right sidebar width in pixels, resizable by user
@@ -27,6 +49,9 @@ export default function DawShell() {
 
   // Audio file picker state
   const [isAudioPickerOpen, setIsAudioPickerOpen] = useState(false);
+
+  // BPM state
+  const [bpm, setBpm] = useState(120);
 
   // Track data with MIDI support
   const [tracks, setTracks] = useState<Track[]>([
@@ -100,18 +125,6 @@ export default function DawShell() {
     );
   }, []);
 
-  // Color palette for tracks
-  const trackColors = [
-    'bg-emerald-500',
-    'bg-blue-500',
-    'bg-purple-500',
-    'bg-pink-500',
-    'bg-yellow-500',
-    'bg-red-500',
-    'bg-cyan-500',
-    'bg-indigo-500',
-  ];
-
   /**
    * Creates a new track with the specified type.
    * This function can be called by users via dialog or by AI agents programmatically.
@@ -166,17 +179,6 @@ export default function DawShell() {
   // User selected an audio file from the picker
   const handleAudioFileSelected = useCallback(
     (audioFile: AudioFile) => {
-      const trackNumber = tracks.length + 1;
-      const trackColors = [
-        'bg-emerald-500',
-        'bg-blue-500',
-        'bg-purple-500',
-        'bg-pink-500',
-        'bg-yellow-500',
-        'bg-red-500',
-        'bg-cyan-500',
-        'bg-indigo-500',
-      ];
       const colorIndex = tracks.length % trackColors.length;
 
       // Create a new audio track with a single clip at bar 0
@@ -214,11 +216,7 @@ export default function DawShell() {
 
             // Update the MIDI part to use the sampler
             if (track.midiClips) {
-              updateMidiParts(
-                trackId,
-                track.midiClips,
-                audioPath ?? undefined
-              );
+              updateMidiParts(trackId, track.midiClips, audioPath ?? undefined);
             }
 
             return updatedTrack;
@@ -233,17 +231,142 @@ export default function DawShell() {
   const handleDeleteTrack = useCallback((trackId: string) => {
     setTracks((prev) => {
       const track = prev.find((t) => t.id === trackId);
-      
+
       // Clean up audio engine resources
       if (track?.type === 'midi') {
         removeMidiTrack(trackId);
       } else if (track?.type === 'audio') {
         removeAllAudioLoopPlayers(trackId);
       }
-      
+
       return prev.filter((t) => t.id !== trackId);
     });
   }, []);
+
+  const handleVolumeChange = useCallback((trackId: string, volume: number) => {
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id === trackId) {
+          // Update audio engine volume
+          if (track.type === 'midi') {
+            setTrackVolume(trackId, volume);
+          } else if (track.type === 'audio') {
+            setAudioLoopVolume(trackId, volume);
+          }
+          return { ...track, volume };
+        }
+        return track;
+      })
+    );
+  }, []);
+
+  const handleBpmChange = useCallback((newBpm: number) => {
+    setBpm(newBpm);
+    setAudioEngineBpm(newBpm);
+  }, []);
+
+  // Handle AI assistant actions
+  const handleAIAssistantActions = useCallback(
+    (response: DAWAssistantResponse) => {
+      if (!response.success || response.actions.length === 0) return;
+
+      response.actions.forEach((action) => {
+        switch (action.type) {
+          case 'create_track':
+            if (action.trackType) {
+              const trackNumber = tracks.length + 1;
+              const colorIndex = tracks.length % trackColors.length;
+              const trackName =
+                action.trackName ||
+                `${
+                  action.trackType === 'midi' ? 'Synth' : 'Audio'
+                } ${trackNumber}`;
+
+              const newTrack: Track = {
+                id: crypto.randomUUID(),
+                name: trackName,
+                color: trackColors[colorIndex],
+                type: action.trackType,
+                muted: false,
+                solo: false,
+                volume: 1,
+                ...(action.trackType === 'midi'
+                  ? { midiClips: [createEmptyMidiClip()] }
+                  : { audioClips: [] }),
+              };
+
+              setTracks((prev) => [...prev, newTrack]);
+
+              // Initialize MIDI part if it's a MIDI track
+              if (action.trackType === 'midi' && newTrack.midiClips) {
+                updateMidiParts(newTrack.id, newTrack.midiClips);
+              }
+
+              console.log(`✓ Created ${action.trackType} track: ${trackName}`);
+            }
+            break;
+
+          case 'delete_track':
+            const trackToDelete = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackToDelete) {
+              handleDeleteTrack(trackToDelete.id);
+              console.log(`✓ Deleted track: ${trackToDelete.name}`);
+            }
+            break;
+
+          case 'adjust_volume':
+            const trackToAdjust = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackToAdjust && action.volume !== undefined) {
+              handleVolumeChange(trackToAdjust.id, action.volume);
+              console.log(
+                `✓ Adjusted volume for ${trackToAdjust.name}: ${action.volume}`
+              );
+            }
+            break;
+
+          case 'adjust_bpm':
+            if (action.bpm) {
+              handleBpmChange(action.bpm);
+              console.log(`✓ Set BPM to ${action.bpm}`);
+            }
+            break;
+
+          case 'select_instrument':
+            const trackForInstrument = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackForInstrument && action.instrumentPath) {
+              handleAttachSampleToMidiTrack(
+                trackForInstrument.id,
+                action.instrumentPath
+              );
+              console.log(
+                `✓ Set instrument for ${trackForInstrument.name}: ${action.instrumentPath}`
+              );
+            }
+            break;
+
+          case 'none':
+            // No action needed, just conversation
+            break;
+
+          default:
+            console.warn('Unknown action type:', action.type);
+        }
+      });
+    },
+    [
+      tracks,
+      handleDeleteTrack,
+      handleVolumeChange,
+      handleBpmChange,
+      handleAttachSampleToMidiTrack,
+    ]
+  );
 
   const handleRightMouseDown = useCallback(() => {
     setIsResizingRight(true);
@@ -275,14 +398,14 @@ export default function DawShell() {
   }, [isResizingRight]);
 
   return (
-    <main className='min-h-screen flex flex-col bg-slate-900 text-slate-100'>
+    <main className='h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden'>
       {/* Top transport bar */}
-      <header className='h-16 border-b border-slate-800 flex items-center px-4'>
-        <TransportBar />
+      <header className='h-16 border-b border-slate-800 flex items-center px-4 shrink-0'>
+        <TransportBar bpm={bpm} onBpmChange={handleBpmChange} />
       </header>
 
       {/* Middle content: tracks + timeline + right sidebar */}
-      <section className='flex flex-1 overflow-hidden'>
+      <section className='flex flex-1 overflow-hidden min-h-0'>
         {/* Left: track list and timeline */}
         <div className='flex flex-1 overflow-hidden'>
           {/* Track list column */}
@@ -309,17 +432,31 @@ export default function DawShell() {
           className='w-1 cursor-col-resize bg-slate-800 hover:bg-emerald-500 transition-colors'
         />
 
-        {/* Right sidebar with dynamic width */}
+        {/* Right sidebar with dynamic width - AI Assistant */}
         <aside
           className='border-l border-slate-800 bg-slate-950'
           style={{ width: rightWidth }}
         >
-          <RightSidebar />
+          <AIAssistant
+            dawState={{
+              tracks: tracks.map((t) => ({
+                id: t.id,
+                name: t.name,
+                type: t.type,
+                volume: t.volume,
+                muted: t.muted,
+                solo: t.solo,
+                samplerAudioUrl: t.samplerAudioUrl ?? undefined,
+              })),
+              bpm,
+            }}
+            onActionsReceived={handleAIAssistantActions}
+          />
         </aside>
       </section>
 
       {/* Bottom mixer - made a bit taller */}
-      <footer className='h-52 border-t border-slate-800 bg-slate-950'>
+      <footer className='h-52 border-t border-slate-800 bg-slate-950 shrink-0'>
         <Mixer tracks={tracks} />
       </footer>
 

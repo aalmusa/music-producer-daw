@@ -5,15 +5,18 @@ import {
   initAudio,
   startTransport,
   stopTransport,
-  setBpm,
   getTransportPosition,
   toggleMetronome,
   isMetronomeEnabled,
 } from "@/lib/audioEngine";
 
-export default function TransportBar() {
+interface TransportBarProps {
+  bpm: number;
+  onBpmChange: (bpm: number) => void;
+}
+
+export default function TransportBar({ bpm, onBpmChange }: TransportBarProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [bpm, setBpmState] = useState(120);
   const [position, setPosition] = useState("0.0.0");
   const [metronomeOn, setMetronomeOn] = useState(false);
 
@@ -50,11 +53,6 @@ export default function TransportBar() {
   const handleStop = () => {
     stopTransport();
     setIsPlaying(false);
-  };
-
-  const handleBpmChange = (value: number) => {
-    setBpmState(value);
-    setBpm(value);
   };
 
   const handleToggleMetronome = async () => {
@@ -94,7 +92,7 @@ export default function TransportBar() {
         <input
           type="number"
           value={bpm}
-          onChange={(e) => handleBpmChange(Number(e.target.value))}
+          onChange={(e) => onBpmChange(Number(e.target.value))}
           className="w-16 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-100 text-xs"
         />
       </div>
