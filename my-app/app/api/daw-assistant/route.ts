@@ -1,3 +1,4 @@
+import { getAudioFileById } from '@/lib/audioLibrary';
 import type {
   DAWAction,
   DAWAssistantRequest,
@@ -6,10 +7,11 @@ import type {
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { MemorySaver } from '@langchain/langgraph';
+import { createAgent } from 'langchain';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { loadSongSpec, type SongSpec } from '../context/SongSpecStore';
-import { audioLibrary, getAudioFileById } from '@/lib/audioLibrary';
 
 // Initialize the LLM with function calling
 // Lower temperature for more deterministic tool calling behavior
@@ -18,6 +20,9 @@ const llm = new ChatGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_API_KEY,
   temperature: 0.3, // Lower temperature for more consistent tool usage
 });
+
+// Create checkpointer for memory persistence
+const checkpointer = new MemorySaver();
 
 /**
  * Normalizes track names to professional, standard names
@@ -65,17 +70,35 @@ const createTrackWithInstrumentTool = new DynamicStructuredTool({
     instrument: z
       .enum([
         // Synth instruments
-        'piano', 'bass', 'lead', 'pad', 'bells', 'pluck',
+        'piano',
+        'bass',
+        'lead',
+        'pad',
+        'bells',
+        'pluck',
         // Sampler instruments - instruments
-        'guitar', 'trumpet',
+        'guitar',
+        'trumpet',
         // Sampler instruments - house drums
-        'house-clap', 'house-hihat', 'house-kick',
+        'house-clap',
+        'house-hihat',
+        'house-kick',
         // Sampler instruments - rap drums
-        '808', 'rap-clap', 'rap-hat', 'rap-kick',
+        '808',
+        'rap-clap',
+        'rap-hat',
+        'rap-kick',
         // Sampler instruments - rock drums
-        'rock-hat', 'rock-kick', 'rock-open-hat', 'rock-snare',
+        'rock-hat',
+        'rock-kick',
+        'rock-open-hat',
+        'rock-snare',
         // Generic drum names (defaults)
-        'hihat', 'clap', 'kick', 'snare', 'open-hat',
+        'hihat',
+        'clap',
+        'kick',
+        'snare',
+        'open-hat',
       ])
       .describe(
         'Instrument type. Synth: piano, bass, lead (guitar), pad, bells, pluck (strings). Sampler instruments: guitar, trumpet, house-clap, house-hihat, house-kick, 808, rap-clap, rap-hat, rap-kick, rock-hat, rock-kick, rock-open-hat, rock-snare. Generic: hihat, clap, kick, snare, open-hat (defaults to house/rock styles).'
@@ -412,13 +435,13 @@ function pickTracks({
   trackCount: number;
 }): TrackTemplate[] {
   // 1. Filter by Type (Audio/MIDI)
-  let validPool = BASE_TEMPLATES.filter((t) =>
+  const validPool = BASE_TEMPLATES.filter((t) =>
     includeAudio ? true : t.type === 'midi'
   );
 
   // 2. Score and Shuffle
   // We attach a score, then SHUFFLE so that ties are broken randomly
-  let candidates = validPool.map((t) => ({
+  const candidates = validPool.map((t) => ({
     template: t,
     score: scoreTemplateForGenre(t, genre),
     // Add a tiny random jitter to the score to prevent strict alphabetical sorting issues
@@ -468,10 +491,9 @@ function pickTracks({
   // 4. Fill the rest based on Score + Random Shuffle
   // We re-shuffle the candidates array slightly to ensure we don't just pick top-down linearly every time
   // if the scores are close.
-  const remainingSlots = Math.max(trackCount - selected.length, 0);
 
   // Filter out what we already picked
-  let poolToPickFrom = candidates.filter(
+  const poolToPickFrom = candidates.filter(
     (c) => !seenNames.has(c.template.name)
   );
 
@@ -703,14 +725,14 @@ const toggleMetronomeTool = new DynamicStructuredTool({
  */
 function getSampleIdForInstrument(instrument: string): string | null {
   const lowerInstrument = instrument.toLowerCase();
-  
+
   // Map instrument names to sample IDs from audio library
   const instrumentToSampleMap: Record<string, string> = {
     // Instruments
-    'bass': 'bass',
-    'guitar': 'guitar',
-    'piano': 'piano',
-    'trumpet': 'trumpet',
+    bass: 'bass',
+    guitar: 'guitar',
+    piano: 'piano',
+    trumpet: 'trumpet',
     // House drums
     'house-clap': 'house-clap',
     'house-hihat': 'house-hihat',
@@ -733,11 +755,11 @@ function getSampleIdForInstrument(instrument: string): string | null {
     'rock-open-hihat': 'rock-open-hat',
     'rock-snare': 'rock-snare',
     // Generic drum names (default to house style)
-    'hihat': 'house-hihat',
+    hihat: 'house-hihat',
     'hi-hat': 'house-hihat',
-    'clap': 'house-clap',
-    'kick': 'house-kick',
-    'snare': 'rock-snare',
+    clap: 'house-clap',
+    kick: 'house-kick',
+    snare: 'rock-snare',
     'open-hat': 'rock-open-hat',
     'open-hihat': 'rock-open-hat',
   };
@@ -765,7 +787,7 @@ function generateActionsForInstrument(
 
   // Check if this instrument should use a sampler sample
   const sampleId = getSampleIdForInstrument(instrument);
-  
+
   if (sampleId) {
     // Use sampler with audio file from library
     const audioFile = getAudioFileById(sampleId);
@@ -785,7 +807,9 @@ function generateActionsForInstrument(
       });
     } else {
       // Fallback: if sample not found, use synth
-      console.warn(`Sample not found for instrument: ${instrument}, using synth instead`);
+      console.warn(
+        `Sample not found for instrument: ${instrument}, using synth instead`
+      );
       actions.push({
         type: 'set_instrument_mode',
         trackName,
@@ -833,6 +857,13 @@ const tools = [
   unmuteTracksTool,
   toggleMetronomeTool,
 ];
+
+// Create agent with memory support
+const agent = createAgent({
+  model: llm,
+  tools,
+  checkpointer,
+});
 
 /**
  * Detect if user message is requesting an action (vs just asking a question)
@@ -927,6 +958,7 @@ async function dawAssistantAgent(
   dawState: DAWAssistantRequest['dawState'],
   userContext?: string,
   songContext?: SongSpec,
+  threadId?: string,
   retryCount = 0
 ): Promise<DAWAssistantResponse> {
   try {
@@ -1083,19 +1115,115 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 
 Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
-    // Bind tools to the LLM
-    const llmWithTools = llm.bindTools(tools);
+    // Use agent with memory if threadId is provided, otherwise use direct LLM call
+    let useMemory = threadId !== undefined && threadId !== null;
+    const config = useMemory
+      ? { configurable: { thread_id: threadId } }
+      : undefined;
 
-    const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(message),
-    ];
+    let response: { content: string | unknown; tool_calls?: unknown[] };
+    let toolCalls: Array<{ name: string; args: unknown }> = [];
+    let agentResponse: { messages: unknown[] } | null = null;
 
-    console.log('🎵 DAW Assistant with tools analyzing request...');
-    const response = await llmWithTools.invoke(messages);
+    if (useMemory) {
+      // Use agent with memory
+      console.log('🎵 DAW Assistant with memory analyzing request...');
+      console.log('📝 Thread ID:', threadId);
+      console.log('📝 Message:', message.substring(0, 100));
 
-    // Extract tool calls and text response
-    const toolCalls = response.tool_calls || [];
+      try {
+        agentResponse = (await agent.invoke(
+          {
+            messages: [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(message),
+            ],
+          },
+          config
+        )) as { messages: unknown[] };
+
+        console.log(
+          '✅ Agent response received, messages count:',
+          agentResponse?.messages?.length || 0
+        );
+      } catch (error) {
+        console.error('❌ Error invoking agent with memory:', error);
+        // Fallback to non-memory path
+        console.log('🔄 Falling back to non-memory path...');
+        useMemory = false;
+        agentResponse = null;
+      }
+
+      // Extract messages from agent response
+      // The agent returns messages array with tool calls and results
+      if (
+        agentResponse &&
+        agentResponse.messages &&
+        agentResponse.messages.length > 0
+      ) {
+        console.log('📋 Processing agent response messages...');
+
+        // Log all message roles for debugging
+        const messageRoles = agentResponse.messages.map((msg: unknown) => {
+          const m = msg as { role?: string; _getType?: () => string };
+          return m.role || m._getType?.() || 'unknown';
+        });
+        console.log('📋 Message roles:', messageRoles);
+
+        // Find assistant messages (which may contain tool calls)
+        const assistantMessages = agentResponse.messages.filter(
+          (msg: unknown) => {
+            const m = msg as { role?: string; _getType?: () => string };
+            return m.role === 'assistant' || m._getType?.() === 'ai';
+          }
+        );
+
+        // Find the last assistant message
+        const lastAssistantMsg = assistantMessages[
+          assistantMessages.length - 1
+        ] as
+          | {
+              tool_calls?: Array<{ name: string; args: unknown }>;
+              content?: string;
+            }
+          | undefined;
+
+        // Check if the last assistant message has tool calls
+        if (
+          lastAssistantMsg &&
+          'tool_calls' in lastAssistantMsg &&
+          lastAssistantMsg.tool_calls
+        ) {
+          toolCalls = lastAssistantMsg.tool_calls;
+          console.log('🔧 Found tool calls:', toolCalls.length);
+        }
+
+        // Extract text response from the last AI message
+        response = {
+          content: lastAssistantMsg?.content || '',
+          tool_calls: toolCalls,
+        };
+
+        console.log(
+          '📝 Extracted response content length:',
+          String(response.content).length
+        );
+      } else {
+        console.log('⚠️ No agent response messages found');
+        response = { content: '', tool_calls: [] };
+      }
+    } else {
+      // Fallback to direct LLM call (no memory)
+      console.log('🎵 DAW Assistant without memory analyzing request...');
+      const llmWithTools = llm.bindTools(tools);
+      const messages = [
+        new SystemMessage(systemPrompt),
+        new HumanMessage(message),
+      ];
+      response = await llmWithTools.invoke(messages);
+      toolCalls =
+        (response.tool_calls as Array<{ name: string; args: unknown }>) || [];
+    }
 
     // Handle content properly - it might be a string or array
     let textResponse = '';
@@ -1104,12 +1232,28 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
     } else if (Array.isArray(response.content)) {
       // If it's an array, join text parts
       textResponse = response.content
-        .filter((item) => typeof item === 'string' || item.type === 'text')
-        .map((item) => (typeof item === 'string' ? item : item.text || ''))
+        .filter(
+          (item: unknown) =>
+            typeof item === 'string' ||
+            (typeof item === 'object' &&
+              item !== null &&
+              'type' in item &&
+              item.type === 'text')
+        )
+        .map((item: unknown) =>
+          typeof item === 'string'
+            ? item
+            : typeof item === 'object' && item !== null && 'text' in item
+            ? String(item.text)
+            : ''
+        )
         .join(' ');
     } else {
       textResponse = String(response.content || '');
     }
+
+    // If using memory and we got tool calls, the agent will execute them automatically
+    // We still need to process the results to extract actions
 
     console.log('🎹 Tool calls:', toolCalls.length);
     console.log('💬 Response:', textResponse.substring(0, 200));
@@ -1119,21 +1263,100 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
     let suggestions: string[] = [];
 
     // If we got tool calls, process them (preferred path)
-    if (toolCalls.length > 0) {
+    // Note: When using memory with createAgent, tools are executed automatically
+    // We need to extract results from the agent's response messages
+    if (toolCalls.length > 0 || (useMemory && agentResponse)) {
       console.log('✅ Processing tool calls...');
-      for (const toolCall of toolCalls) {
-        try {
-          const tool = tools.find((t) => t.name === toolCall.name);
-          if (tool) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await tool.func(toolCall.args as any);
-            const parsed = JSON.parse(result);
-            if (parsed.actions) {
-              allActions.push(...parsed.actions);
+
+      // If using memory, tools have already been executed by the agent
+      // Extract results from tool messages in the agent response
+      if (useMemory && agentResponse) {
+        // When using memory, the agent executes tools and includes results in messages
+        // Look for tool result messages
+        console.log('🔍 Searching for tool result messages...');
+        let toolResultCount = 0;
+
+        for (const msg of agentResponse.messages) {
+          const m = msg as {
+            role?: string;
+            _getType?: () => string;
+            content?: string | unknown;
+            name?: string;
+          };
+
+          // Check if this is a tool message (could be role='tool' or _getType()='tool')
+          const isToolMessage = m.role === 'tool' || m._getType?.() === 'tool';
+
+          if (isToolMessage && m.content) {
+            toolResultCount++;
+            console.log(
+              `🔧 Found tool result message ${toolResultCount}, tool: ${
+                m.name || 'unknown'
+              }`
+            );
+
+            try {
+              const contentStr =
+                typeof m.content === 'string'
+                  ? m.content
+                  : JSON.stringify(m.content);
+
+              const parsed = JSON.parse(contentStr) as {
+                actions?: DAWAction[];
+                success?: boolean;
+              };
+
+              if (parsed.actions && Array.isArray(parsed.actions)) {
+                console.log(
+                  `✅ Extracted ${parsed.actions.length} actions from tool result`
+                );
+                allActions.push(...parsed.actions);
+              } else if (parsed.success !== undefined) {
+                // Tool returned success but no actions - this is okay
+                console.log(
+                  'ℹ️ Tool executed successfully but returned no actions'
+                );
+              }
+            } catch (parseError) {
+              console.log(
+                '⚠️ Could not parse tool result as JSON:',
+                parseError
+              );
+              // Try to log the raw content for debugging
+              console.log(
+                '📄 Raw tool result content:',
+                String(m.content).substring(0, 200)
+              );
             }
           }
-        } catch (error) {
-          console.error('Error executing tool:', toolCall.name, error);
+        }
+
+        console.log(`📊 Total tool results processed: ${toolResultCount}`);
+        console.log(`📊 Total actions extracted: ${allActions.length}`);
+
+        // If we have tool calls but no actions extracted, the tools might not have returned actions
+        // This could mean the agent is working but tools aren't returning the expected format
+        if (toolCalls.length > 0 && allActions.length === 0) {
+          console.log(
+            '⚠️ Tool calls were made but no actions were extracted from results'
+          );
+        }
+      } else {
+        // Execute tools manually (no memory path)
+        for (const toolCall of toolCalls) {
+          try {
+            const tool = tools.find((t) => t.name === toolCall.name);
+            if (tool) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const result = await tool.func(toolCall.args as any);
+              const parsed = JSON.parse(result);
+              if (parsed.actions) {
+                allActions.push(...parsed.actions);
+              }
+            }
+          } catch (error) {
+            console.error('Error executing tool:', toolCall.name, error);
+          }
         }
       }
 
@@ -1185,6 +1408,7 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
           dawState,
           userContext,
           songContext,
+          threadId,
           1
         );
       }
@@ -1198,6 +1422,29 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
     }
 
     console.log('✅ Final action count:', allActions.length);
+    console.log('✅ Final message length:', finalMessage.length);
+
+    // If using memory but got no actions and empty message, the memory path might have failed
+    // Fall back to non-memory path as a safety net
+    if (
+      useMemory &&
+      allActions.length === 0 &&
+      !finalMessage.trim() &&
+      isActionRequest(message)
+    ) {
+      console.log(
+        '⚠️ Memory path returned no results, falling back to non-memory path...'
+      );
+      // Retry without memory
+      return dawAssistantAgent(
+        message,
+        dawState,
+        userContext,
+        songContext,
+        undefined, // No threadId = no memory
+        retryCount
+      );
+    }
 
     return {
       success: true,
@@ -1222,8 +1469,15 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as DAWAssistantRequest & {
       songId?: string;
+      threadId?: string;
     };
-    const { message, dawState, userContext, songId = 'default' } = body;
+    const {
+      message,
+      dawState,
+      userContext,
+      songId = 'default',
+      threadId,
+    } = body;
 
     // Validate required fields
     if (!message || !dawState) {
@@ -1233,18 +1487,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Automatically generate a thread ID if not provided
+    // This enables memory by default for all conversations
+    const finalThreadId = threadId || crypto.randomUUID();
+
+    if (!threadId) {
+      console.log('🆔 No threadId provided, auto-generated:', finalThreadId);
+    }
+
     // Fetch song context
     const songContext = await loadSongSpec(songId);
 
-    // Run the agent
+    // Run the agent with threadId for memory (always use memory now)
     const result = await dawAssistantAgent(
       message,
       dawState,
       userContext,
-      songContext
+      songContext,
+      finalThreadId
     );
 
-    return NextResponse.json(result, { status: result.success ? 200 : 500 });
+    // Include the threadId in the response so the client can use it for subsequent requests
+    return NextResponse.json(
+      { ...result, threadId: finalThreadId },
+      { status: result.success ? 200 : 500 }
+    );
   } catch (error) {
     console.error('API route error:', error);
     return NextResponse.json(
