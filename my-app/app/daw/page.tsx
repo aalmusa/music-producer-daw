@@ -1,6 +1,11 @@
 // app/daw/page.tsx
-import DawShell from "@/components/daw/DawShell";
+import DawShell from '@/components/daw/DawShell';
+import { SongSpecProvider } from '@/lib/song-spec-context';
 
 export default function DawPage() {
-  return <DawShell />;
+  return (
+    <SongSpecProvider>
+      <DawShell />
+    </SongSpecProvider>
+  );
 }
