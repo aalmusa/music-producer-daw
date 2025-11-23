@@ -1,29 +1,46 @@
 {
   "id": "default",
-  "references": [],
-  "createdAt": "2025-11-23T07:36:48.067Z",
-  "updatedAt": "2025-11-23T07:37:20.534Z",
-  "genre": "House EDM",
-  "mood": [
-    "Energetic",
-    "Danceable"
+  "references": [
+    {
+      "id": "ref-1",
+      "sourcePath": "/Users/alielgalad/Desktop/music-producer-daw/my-app/audio/1763882325756-Love Songs (Bonus).mp3.wav",
+      "bpm": 110.31187926153204,
+      "key": "F",
+      "scale": "major",
+      "strength": 0.9093865752220154,
+      "energySegments": [],
+      "genres": [],
+      "moods": []
+    }
   ],
+  "createdAt": "2025-11-23T07:18:46.949Z",
+  "updatedAt": "2025-11-23T07:18:58.674Z",
+  "aggregate": {
+    "bpm": 110,
+    "key": "F",
+    "scale": "major",
+    "bpmRange": [110.31187926153204, 110.31187926153204],
+    "keysConsidered": ["F_major"],
+    "genres": [],
+    "moods": []
+  },
+  "bpm": 110,
+  "key": "F",
+  "scale": "major",
   "instruments": [
-    "Drum Machine",
-    "Synthesizer",
-    "Electric Piano",
-    "Vocal Samples"
+    "Drums",
+    "Bass Guitar",
+    "Piano",
+    "Strings",
+    "Acoustic Guitar"
   ],
   "chordProgression": {
-    "global": [
-      "Dmaj7",
-      "Amaj7",
-      "E7",
-      "F#m7"
-    ],
-    "bySection": {}
-  },
-  "bpm": 126,
-  "key": "A",
-  "scale": "major"
+    "global": ["Fmaj7", "Dm7", "Gm7", "C7"],
+    "bySection": {
+      "intro": ["Fmaj7", "Dm7", "Gm7", "C7"],
+      "verse": ["Fmaj7", "Dm7", "Gm7", "C7"],
+      "chorus": ["Bbmaj7", "Fmaj7/A", "Gm7", "C7"],
+      "bridge": ["Am7", "Dm7", "Gm7", "C7sus4", "C7"]
+    }
+  }
 }

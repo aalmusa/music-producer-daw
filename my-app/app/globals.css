@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -121,12 +121,109 @@
   }
 }
 
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient {
+  animation: gradient 8s linear infinite;
+}
+
+/* High Energy: Bloom (Glow) & Shake */
+@keyframes energy-high-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5),
+      0 0 20px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.4),
+      inset 0 0 10px rgba(255, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.8),
+      0 0 40px rgba(255, 20, 147, 0.9), 0 0 60px rgba(255, 20, 147, 0.7),
+      inset 0 0 20px rgba(255, 255, 255, 0.5);
+  }
+}
+
+@keyframes energy-high-shake {
+  0%,
+  100% {
+    transform: translateX(0) translateY(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-1px) translateY(-1px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(1px) translateY(1px);
+  }
+}
+
+.energy-high-glow {
+  animation: energy-high-glow 2s ease-in-out infinite;
+}
+
+.energy-high-shake {
+  animation: energy-high-shake 0.1s ease-in-out infinite;
+}
+
+/* Medium Energy: Rhythmic Pulse */
+@keyframes energy-medium-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleY(0.95);
+  }
+}
+
+.energy-medium-pulse {
+  animation: energy-medium-pulse var(--pulse-duration, 0.5s) ease-in-out
+    infinite;
+  transform-origin: center;
+}
+
+/* Low Energy: Fluid Motion */
+@keyframes energy-low-fluid {
+  0%,
+  100% {
+    background-position: 0% 50%;
+    opacity: 0.9;
+  }
+  50% {
+    background-position: 100% 50%;
+    opacity: 1;
+  }
+}
+
+.energy-low-fluid {
+  background-size: 200% 100%;
+  animation: energy-low-fluid 4s ease-in-out infinite;
+  filter: blur(0.5px);
+}
+
 /* Hide scrollbar for TrackList (synchronized with Timeline) */
-[data-scroll-sync="tracklist"]::-webkit-scrollbar {
+[data-scroll-sync='tracklist']::-webkit-scrollbar {
   display: none;
 }
 
-[data-scroll-sync="tracklist"] {
+[data-scroll-sync='tracklist'] {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
 }

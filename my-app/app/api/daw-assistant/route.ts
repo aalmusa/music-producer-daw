@@ -95,10 +95,348 @@ const createAudioTrackTool = new DynamicStructuredTool({
   },
 });
 
+type TrackType = 'midi' | 'audio';
+
+interface TrackTemplate {
+  type: TrackType;
+  name: string;
+  instrument?: string;
+  synthPreset?: string;
+  role: 'core' | 'percussion' | 'melody' | 'harmony' | 'fx' | 'vocal';
+  tags?: string[]; // e.g. ["electronic", "hip-hop"]
+}
+
+const BASE_TEMPLATES: TrackTemplate[] = [
+  // --- CORE RHYTHM ---
+  { type: 'audio', name: 'Kick Drum', role: 'core', tags: ['all'] },
+  { type: 'audio', name: 'Snare Drum', role: 'core', tags: ['all'] }, // Renamed to distinct from Clap
+  {
+    type: 'audio',
+    name: 'Clap',
+    role: 'core',
+    tags: ['pop', 'hip-hop', 'electronic'],
+  },
+  {
+    type: 'audio',
+    name: 'Drum Overheads',
+    role: 'core',
+    tags: ['rock', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Electronic Drum Kit',
+    instrument: 'drums',
+    role: 'core',
+    tags: ['electronic', 'hip-hop'],
+  },
+
+  // --- BASS ---
+  {
+    type: 'midi',
+    name: 'Sub Bass',
+    instrument: 'bass',
+    synthPreset: 'sub-bass',
+    role: 'core',
+    tags: ['hip-hop', 'electronic'],
+  },
+  {
+    type: 'midi',
+    name: 'Reese Bass',
+    instrument: 'bass',
+    synthPreset: 'reese',
+    role: 'core',
+    tags: ['electronic'],
+  },
+  {
+    type: 'midi',
+    name: 'Plucked Bass',
+    instrument: 'bass',
+    synthPreset: 'slap-bass',
+    role: 'core',
+    tags: ['pop', 'funk'],
+  },
+  {
+    type: 'midi',
+    name: 'Synth Bass',
+    instrument: 'bass',
+    synthPreset: 'analog-bass',
+    role: 'core',
+    tags: ['all'],
+  },
+
+  // --- PERCUSSION ---
+  {
+    type: 'midi',
+    name: 'Closed Hi-hat',
+    instrument: 'hihat',
+    synthPreset: 'tight-hat',
+    role: 'percussion',
+    tags: ['electronic', 'hip-hop', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Open Hi-hat',
+    instrument: 'hihat',
+    synthPreset: 'open-hat',
+    role: 'percussion',
+    tags: ['electronic', 'hip-hop'],
+  },
+  {
+    type: 'midi',
+    name: 'Shaker',
+    instrument: 'percussion',
+    synthPreset: 'shaker',
+    role: 'percussion',
+    tags: ['pop', 'house'],
+  },
+  {
+    type: 'audio',
+    name: 'Top Loop',
+    role: 'percussion',
+    tags: ['electronic', 'house'],
+  },
+  {
+    type: 'audio',
+    name: 'Foley Textures',
+    role: 'percussion',
+    tags: ['ambient', 'lo-fi'],
+  },
+
+  // --- HARMONY ---
+  {
+    type: 'midi',
+    name: 'Grand Piano',
+    instrument: 'piano',
+    synthPreset: 'grand-piano',
+    role: 'harmony',
+    tags: ['pop', 'ballad'],
+  },
+  {
+    type: 'midi',
+    name: 'Electric Keys',
+    instrument: 'keys',
+    synthPreset: 'rhodes',
+    role: 'harmony',
+    tags: ['hip-hop', 'rnb', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Super Saw Chords',
+    instrument: 'synth',
+    synthPreset: 'super-saw',
+    role: 'harmony',
+    tags: ['electronic', 'edm'],
+  },
+  {
+    type: 'midi',
+    name: 'Warm Pad',
+    instrument: 'pad',
+    synthPreset: 'warm-pad',
+    role: 'harmony',
+    tags: ['electronic', 'ambient', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Acoustic Guitar',
+    instrument: 'guitar',
+    synthPreset: 'nylon',
+    role: 'harmony',
+    tags: ['pop', 'lo-fi'],
+  },
+
+  // --- MELODY ---
+  {
+    type: 'midi',
+    name: 'Lead Synth',
+    instrument: 'lead',
+    synthPreset: 'bright-lead',
+    role: 'melody',
+    tags: ['electronic', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Pluck Melody',
+    instrument: 'pluck',
+    synthPreset: 'short-pluck',
+    role: 'melody',
+    tags: ['electronic', 'pop', 'house'],
+  },
+  {
+    type: 'midi',
+    name: 'Arpeggiator',
+    instrument: 'arp',
+    synthPreset: 'sync-arp',
+    role: 'melody',
+    tags: ['electronic'],
+  },
+  {
+    type: 'midi',
+    name: 'Brass Stabs',
+    instrument: 'brass',
+    synthPreset: 'synth-brass',
+    role: 'melody',
+    tags: ['hip-hop', 'trap', 'pop'],
+  },
+  {
+    type: 'midi',
+    name: 'Bell / Mallet',
+    instrument: 'bells',
+    synthPreset: 'soft-bell',
+    role: 'melody',
+    tags: ['ambient', 'electronic', 'hip-hop'],
+  },
+
+  // --- FX / VOCALS ---
+  {
+    type: 'audio',
+    name: 'Riser / Sweep',
+    role: 'fx',
+    tags: ['electronic', 'pop'],
+  },
+  {
+    type: 'audio',
+    name: 'Impact',
+    role: 'fx',
+    tags: ['electronic', 'cinematic'],
+  },
+  {
+    type: 'audio',
+    name: 'Vocal Chops',
+    role: 'melody',
+    tags: ['electronic', 'pop'],
+  },
+  {
+    type: 'audio',
+    name: 'Vinyl Crackle',
+    role: 'fx',
+    tags: ['lo-fi', 'hip-hop'],
+  },
+];
+
+function scoreTemplateForGenre(t: TrackTemplate, genre?: string): number {
+  if (!genre) return 1; // neutral
+
+  const g = genre.toLowerCase();
+  const genreKey =
+    g.includes('hip-hop') || g.includes('rap')
+      ? 'hip-hop'
+      : g.includes('edm') || g.includes('electronic')
+      ? 'electronic'
+      : g.includes('ambient')
+      ? 'ambient'
+      : g.includes('pop')
+      ? 'pop'
+      : 'all';
+
+  if (!t.tags || t.tags.includes('all')) return 1;
+
+  if (t.tags.includes(genreKey)) return 2; // prefer these
+  return 0.3; // still allowed but lower priority
+}
+
+// Helper to shuffle array (Fisher-Yates)
+function shuffle<T>(array: T[]): T[] {
+  let currentIndex = array.length,
+    randomIndex;
+  while (currentIndex != 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [
+      array[randomIndex],
+      array[currentIndex],
+    ];
+  }
+  return array;
+}
+
+function pickTracks({
+  genre,
+  includeAudio,
+  trackCount,
+}: {
+  genre?: string;
+  includeAudio: boolean;
+  trackCount: number;
+}): TrackTemplate[] {
+  // 1. Filter by Type (Audio/MIDI)
+  let validPool = BASE_TEMPLATES.filter((t) =>
+    includeAudio ? true : t.type === 'midi'
+  );
+
+  // 2. Score and Shuffle
+  // We attach a score, then SHUFFLE so that ties are broken randomly
+  let candidates = validPool.map((t) => ({
+    template: t,
+    score: scoreTemplateForGenre(t, genre),
+    // Add a tiny random jitter to the score to prevent strict alphabetical sorting issues
+    randomizer: Math.random(),
+  }));
+
+  // Sort by Score (High to Low), then by Randomizer
+  candidates.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score;
+    return b.randomizer - a.randomizer;
+  });
+
+  const selected: TrackTemplate[] = [];
+  const seenNames = new Set<string>();
+
+  const addTrack = (t: TrackTemplate) => {
+    if (!seenNames.has(t.name)) {
+      selected.push(t);
+      seenNames.add(t.name);
+    }
+  };
+
+  // 3. Fulfill Essential ROLES (Not specific track names)
+  // instead of forcing "Kick", we look for the highest scoring "core" item
+
+  // A. Ensure at least one Rhythm/Core
+  const rhythm = candidates.find((c) => c.template.role === 'core');
+  if (rhythm) addTrack(rhythm.template);
+
+  // B. Ensure at least one Bass (specifically instrument: bass or name includes bass)
+  const bass = candidates.find(
+    (c) =>
+      !seenNames.has(c.template.name) &&
+      (c.template.instrument === 'bass' ||
+        c.template.name.toLowerCase().includes('bass'))
+  );
+  if (bass) addTrack(bass.template);
+
+  // C. Ensure at least one Melody or Harmony
+  const melodic = candidates.find(
+    (c) =>
+      !seenNames.has(c.template.name) &&
+      (c.template.role === 'melody' || c.template.role === 'harmony')
+  );
+  if (melodic) addTrack(melodic.template);
+
+  // 4. Fill the rest based on Score + Random Shuffle
+  // We re-shuffle the candidates array slightly to ensure we don't just pick top-down linearly every time
+  // if the scores are close.
+  const remainingSlots = Math.max(trackCount - selected.length, 0);
+
+  // Filter out what we already picked
+  let poolToPickFrom = candidates.filter(
+    (c) => !seenNames.has(c.template.name)
+  );
+
+  // If we want audio/midi balance, we can apply logic here,
+  // otherwise just pick top scorers from the shuffled list
+  for (const c of poolToPickFrom) {
+    if (selected.length >= trackCount) break;
+    addTrack(c.template);
+  }
+
+  // 5. Final Shuffle of the Output (optional, so they aren't listed in importance order)
+  return shuffle(selected);
+}
+
 const suggestComprehensiveTracksTool = new DynamicStructuredTool({
   name: 'suggest_comprehensive_tracks',
   description:
-    'Generate a comprehensive list of 8-12 varied track suggestions for a music project. Use this when the user asks for track ideas, suggestions, or what tracks to create. This should include a good mix of MIDI tracks with different synth presets AND audio tracks.',
+    'Generate a comprehensive list of 5-8 varied track suggestions for a music project. Use this when the user asks for track ideas, suggestions, or what tracks to create. This includes a mix of MIDI tracks with different synth presets and audio tracks.',
   schema: z.object({
     genre: z
       .string()
@@ -114,181 +452,38 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
       .number()
       .min(8)
       .max(15)
-      .default(10)
-      .describe('Number of tracks to suggest (8-15, default 10)'),
+      .default(5)
+      .describe('Number of tracks to suggest (5-8, default 5)'),
   }),
-  func: async ({ genre, includeAudio = true, trackCount = 10 }) => {
-    // Generate comprehensive track suggestions with variety
-    // Always aim for 8-12 tracks with good mix of MIDI (different synths) and audio
-    const suggestions: Array<{
-      type: 'midi' | 'audio';
-      name: string;
-      instrument?: string;
-      synthPreset?: string;
-    }> = [];
+  func: async ({ genre, includeAudio = true, trackCount = 5 }) => {
+    const selected = pickTracks({ genre, includeAudio, trackCount });
 
-    // Core rhythm section (always include)
-    suggestions.push(
-      { type: 'audio', name: 'Kick Drum' },
-      { type: 'audio', name: 'Drums' },
-      { type: 'midi', name: 'Bass', instrument: 'bass', synthPreset: 'bass' }
-    );
-
-    // Percussion variety
-    suggestions.push(
-      { type: 'midi', name: 'Hi-hat', instrument: 'hihat' },
-      { type: 'midi', name: 'Clap', instrument: 'clap' }
-    );
-
-    // Melodic elements with DIFFERENT synth presets (variety is key!)
-    suggestions.push(
-      {
-        type: 'midi',
-        name: 'Lead Synth',
-        instrument: 'lead',
-        synthPreset: 'lead',
-      },
-      { type: 'midi', name: 'Pad', instrument: 'pad', synthPreset: 'pad' },
-      {
-        type: 'midi',
-        name: 'Piano',
-        instrument: 'piano',
-        synthPreset: 'piano',
-      },
-      {
-        type: 'midi',
-        name: 'Strings',
-        instrument: 'pluck',
-        synthPreset: 'pluck',
-      },
-      { type: 'midi', name: 'Bells', instrument: 'bells', synthPreset: 'bells' }
-    );
-
-    // Additional audio tracks for variety
-    if (includeAudio) {
-      suggestions.push(
-        { type: 'audio', name: 'Vocals' },
-        { type: 'audio', name: 'FX' }
-      );
-    }
-
-    // Genre-specific additions
-    if (genre) {
-      const lowerGenre = genre.toLowerCase();
-      if (lowerGenre.includes('electronic') || lowerGenre.includes('edm')) {
-        suggestions.push(
-          {
-            type: 'midi',
-            name: 'Arp',
-            instrument: 'pluck',
-            synthPreset: 'pluck',
-          },
-          {
-            type: 'midi',
-            name: 'Pluck',
-            instrument: 'pluck',
-            synthPreset: 'pluck',
-          },
-          { type: 'audio', name: 'Riser' }
-        );
-      } else if (lowerGenre.includes('hip-hop') || lowerGenre.includes('rap')) {
-        suggestions.push(
-          { type: 'audio', name: 'Vocal Samples' },
-          {
-            type: 'midi',
-            name: '808',
-            instrument: 'bass',
-            synthPreset: 'bass',
-          },
-          { type: 'audio', name: 'Snare' }
-        );
-      } else if (lowerGenre.includes('pop')) {
-        suggestions.push(
-          { type: 'audio', name: 'Acoustic Guitar' },
-          {
-            type: 'midi',
-            name: 'Synth Chords',
-            instrument: 'pad',
-            synthPreset: 'pad',
-          },
-          { type: 'audio', name: 'Percussion' }
-        );
-      } else if (lowerGenre.includes('ambient')) {
-        suggestions.push(
-          {
-            type: 'midi',
-            name: 'Atmosphere',
-            instrument: 'pad',
-            synthPreset: 'pad',
-          },
-          { type: 'audio', name: 'Field Recording' },
-          {
-            type: 'midi',
-            name: 'Texture',
-            instrument: 'pluck',
-            synthPreset: 'pluck',
-          }
-        );
-      }
-    }
-
-    // Ensure we have at least trackCount suggestions, fill with more variety if needed
-    while (suggestions.length < trackCount) {
-      const additionalTracks = [
-        {
-          type: 'midi' as const,
-          name: 'Synth 2',
-          instrument: 'lead',
-          synthPreset: 'lead',
-        },
-        {
-          type: 'midi' as const,
-          name: 'Pad 2',
-          instrument: 'pad',
-          synthPreset: 'pad',
-        },
-        { type: 'audio' as const, name: 'Sample' },
-        {
-          type: 'midi' as const,
-          name: 'Pluck',
-          instrument: 'pluck',
-          synthPreset: 'pluck',
-        },
-        { type: 'audio' as const, name: 'Loop' },
-      ];
-      suggestions.push(
-        ...additionalTracks.slice(0, trackCount - suggestions.length)
-      );
-    }
-
-    // Trim to requested count (but ensure minimum variety)
-    const finalSuggestions = suggestions.slice(0, Math.max(trackCount, 8));
-
-    // Convert to actions
     const actions: DAWAction[] = [];
-    for (const suggestion of finalSuggestions) {
-      if (suggestion.type === 'audio') {
+
+    for (const t of selected) {
+      if (t.type === 'audio') {
         actions.push({
           type: 'create_track',
           trackType: 'audio',
-          trackName: suggestion.name,
-          reasoning: `Suggested audio track: ${suggestion.name}`,
+          trackName: t.name,
+          reasoning: `Suggested audio track: ${t.name}`,
         });
       } else {
-        // MIDI track with instrument
-        const instrumentActions = generateActionsForInstrument(
-          suggestion.name,
-          suggestion.instrument || 'piano'
-        );
-        actions.push(...instrumentActions);
+        const instrument = t.instrument || 'piano';
+        const midiActions = generateActionsForInstrument(t.name, instrument);
+        actions.push(...midiActions);
       }
     }
 
     return JSON.stringify({
       success: true,
-      suggestions: finalSuggestions,
+      suggestions: selected,
       actions,
-      message: `Here's a comprehensive track setup with ${finalSuggestions.length} tracks including a mix of MIDI synths and audio tracks!`,
+      message: `Here’s a structured setup with ${
+        selected.length
+      } tracks, balanced between MIDI and audio and tuned for ${
+        genre || 'a general modern production'
+      }.`,
     });
   },
 });
@@ -640,7 +835,7 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap). USE THIS when user wants a track with a specific instrument.
 - create_empty_track: Create an empty MIDI track (when you want to ask user what instrument they want)
 - create_audio_track: Create an audio track for audio files/loops. USE THIS when user wants an audio track or for drums, vocals, recorded instruments.
-- suggest_comprehensive_tracks: Generate a comprehensive list of 8-12 varied track suggestions. USE THIS when user asks for track ideas, suggestions, or "what tracks should I create". This creates a full, varied track setup with different synth presets AND audio tracks.
+- suggest_comprehensive_tracks: Generate a comprehensive list of 5-8 varied track suggestions. USE THIS when user asks for track ideas, suggestions, or "what tracks should I create". This creates a full, varied track setup with different synth presets AND audio tracks.
 - adjust_bpm: Change the project tempo. USE THIS when user asks to change BPM or tempo.
 - adjust_volume: Adjust volume of a specific track. USE THIS when user wants to change track volume.
 - delete_track: Delete a track. USE THIS when user wants to remove a track.
@@ -663,9 +858,9 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - User: "Add a bass track" → You MUST call create_track_with_instrument with trackName="Bass", instrument="bass"
 - User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
 - User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
-- User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
+- User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
+- User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
 
 **Examples of INCORRECT behavior (DO NOT DO THIS):**
 - User: "Create a piano track" → ❌ WRONG: "I'll create a piano track for you" (without calling tool)
@@ -677,17 +872,17 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - The suggest_comprehensive_tracks tool should create a MIX of:
   * MIDI tracks with DIFFERENT synth presets (piano, bass, lead, pad, bells, pluck) - NOT all the same!
   * Audio tracks (drums, vocals, recorded instruments)
-  * Variety is key - don't suggest 4 similar tracks, suggest 8-12 with different instruments and types
+  * Variety is key - don't suggest 4 similar tracks, suggest 5-8 with different instruments and types
 - For house beats, typically use: kick (bass), bass, hihat, clap, and set BPM to 120-128
 - Be conversational in your text response AFTER calling tools, but ALWAYS call tools first for action requests
 - If user doesn't specify instrument, use create_empty_track and ask them what they want
 - When suggesting tracks, always aim for comprehensive variety: different synth types, audio tracks, percussion, melodic elements
 
 **Track Suggestion Examples:**
-- User: "What tracks should I create?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Give me track ideas" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Suggest some tracks" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "What should I add?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "What tracks should I create?" → Call suggest_comprehensive_tracks (creates 5-8 varied tracks)
+- User: "Give me track ideas" → Call suggest_comprehensive_tracks (creates 5-8 varied tracks)
+- User: "Suggest some tracks" → Call suggest_comprehensive_tracks (creates 5-8varied tracks)
+- User: "What should I add?" → Call suggest_comprehensive_tracks (creates 5-8 varied tracks)
 
 Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
