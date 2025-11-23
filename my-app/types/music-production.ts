@@ -57,7 +57,7 @@ export interface DAWAssistantRequest {
 }
 
 export interface DAWAction {
-  type: 
+  type:
     | 'create_track'
     | 'delete_track'
     | 'rename_track'
@@ -95,4 +95,5 @@ export interface DAWAssistantResponse {
   actions: DAWAction[]; // Actions to perform
   suggestions?: string[]; // Ideas for what to do next
   error?: string;
+  threadId?: string; // Thread ID for memory persistence (auto-generated if not provided)
 }
