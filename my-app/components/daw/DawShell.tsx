@@ -1,9 +1,10 @@
 'use client';
 
-import { removeMidiTrack, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
+import { removeAllAudioLoopPlayers, removeMidiTrack, setAudioLoopMute, setTrackMute,updateMidiParts } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
 import {
   Track,
+  createAudioClip,
   createDemoMidiClip,
   createEmptyMidiClip,
   MidiNote,
@@ -55,6 +56,42 @@ export default function DawShell() {
 
   // Track data - Start with empty tracks
   const [tracks, setTracks] = useState<Track[]>([]);
+  // Track data with MIDI support
+  const [tracks, setTracks] = useState<Track[]>([
+    {
+      id: '1',
+      name: 'Drums',
+      color: 'bg-emerald-500',
+      type: 'audio',
+      muted: false,
+      solo: false,
+      volume: 1,
+      audioClips: [
+        createAudioClip('/audio/demo-loop.wav', 0, 'Demo Loop'),
+        createAudioClip('/audio/demo-loop.wav', 8, 'Demo Loop'),
+      ],
+    },
+    {
+      id: '2',
+      name: 'Bass',
+      color: 'bg-blue-500',
+      type: 'midi',
+      muted: false,
+      solo: false,
+      volume: 1,
+      midiClips: [createDemoMidiClip(0), createEmptyMidiClip(4, 4)],
+    },
+    {
+      id: '3',
+      name: 'Keys',
+      color: 'bg-purple-500',
+      type: 'midi',
+      muted: false,
+      solo: false,
+      volume: 1,
+      midiClips: [createEmptyMidiClip(4, 0)],
+    },
+  ]);
 
   // Initialize MIDI parts on mount
   useEffect(() => {
@@ -76,6 +113,8 @@ export default function DawShell() {
           const newMuted = !track.muted;
           if (track.type === 'midi') {
             setTrackMute(trackId, newMuted);
+          } else if (track.type === 'audio') {
+            setAudioLoopMute(trackId, newMuted);
           }
           return { ...track, muted: newMuted };
         }
@@ -174,6 +213,7 @@ export default function DawShell() {
       ];
       const colorIndex = tracks.length % trackColors.length;
 
+      // Create a new audio track with a single clip at bar 0
       const newTrack: Track = {
         id: crypto.randomUUID(),
         name: audioFile.name,
@@ -182,7 +222,7 @@ export default function DawShell() {
         muted: false,
         solo: false,
         volume: 1,
-        audioUrl: audioFile.path,
+        audioClips: [createAudioClip(audioFile.path, 0, audioFile.name)],
       };
 
       setTracks((prev) => [...prev, newTrack]);
@@ -233,6 +273,8 @@ export default function DawShell() {
       // Clean up audio engine resources
       if (track?.type === 'midi') {
         removeMidiTrack(trackId);
+      } else if (track?.type === 'audio') {
+        removeAllAudioLoopPlayers(trackId);
       }
       
       return prev.filter((t) => t.id !== trackId);
