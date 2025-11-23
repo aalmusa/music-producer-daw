@@ -19,6 +19,8 @@ import {
   createAudioClip,
   createDemoMidiClip,
   createEmptyMidiClip,
+  MidiNote,
+  MidiClipData,
 } from '@/lib/midiTypes';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
@@ -42,6 +44,27 @@ const trackColors = [
   'bg-indigo-500',
 ];
 
+// Helper to create notes with proper structure
+function note(pitch: number, start: number, duration: number, velocity: number): MidiNote {
+  return {
+    id: crypto.randomUUID(),
+    pitch,
+    start,
+    duration,
+    velocity,
+  };
+}
+
+// Helper to create MIDI clips
+function clip(id: string, startBar: number, durationBars: number, notes: MidiNote[]): MidiClipData {
+  return {
+    id,
+    startBar,
+    bars: durationBars,
+    notes,
+  };
+}
+
 export default function DawShell() {
   // Right sidebar width in pixels, resizable by user
   const [rightWidth, setRightWidth] = useState(320);
@@ -62,6 +85,11 @@ export default function DawShell() {
   // Metronome state
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
 
+  // Track height state - shared between TrackList and Timeline
+  const [trackHeight, setTrackHeight] = useState(96);
+
+  // Track data - Start with empty tracks
+  const [tracks, setTracks] = useState<Track[]>([]);
   // Track data with MIDI support
   const [tracks, setTracks] = useState<Track[]>([
     {
@@ -102,8 +130,11 @@ export default function DawShell() {
   // Initialize MIDI parts on mount
   useEffect(() => {
     tracks.forEach((track) => {
-      if (track.type === 'midi' && track.midiClips) {
-        updateMidiParts(track.id, track.midiClips);
+      if (track.type === 'midi' && track.midiClips && track.instrumentMode !== null) {
+        // Only initialize if the track has a mode selected
+        const samplerUrl = track.instrumentMode === 'sampler' ? track.samplerAudioUrl : undefined;
+        const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+        updateMidiParts(track.id, track.midiClips, samplerUrl, synthPreset);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,23 +176,26 @@ export default function DawShell() {
 
       const newTrack: Track = {
         id: crypto.randomUUID(),
-        name: `${trackType === 'midi' ? 'Synth' : 'Audio'} ${trackNumber}`,
+        name: `${trackType === 'midi' ? 'MIDI' : 'Audio'} ${trackNumber}`,
         color: trackColors[colorIndex],
         type: trackType,
         muted: false,
         solo: false,
         volume: 1,
         ...(trackType === 'midi'
-          ? { midiClip: createEmptyMidiClip() }
+          ? { 
+              midiClips: [createEmptyMidiClip(4, 0)],
+              instrumentMode: null // Start with no mode selected
+            }
           : { audioUrl: undefined }),
       };
 
       setTracks((prev) => [...prev, newTrack]);
 
-      // Initialize MIDI part if it's a MIDI track
-      if (trackType === 'midi' && newTrack.midiClips) {
-        updateMidiParts(newTrack.id, newTrack.midiClips);
-      }
+      // Don't initialize MIDI parts until user selects a mode
+      // if (trackType === 'midi' && newTrack.midiClips) {
+      //   updateMidiParts(newTrack.id, newTrack.midiClips);
+      // }
 
       return newTrack;
     },
@@ -225,7 +259,13 @@ export default function DawShell() {
 
             // Update the MIDI part to use the sampler
             if (track.midiClips) {
-              updateMidiParts(trackId, track.midiClips, audioPath ?? undefined);
+              const synthPreset = track.instrumentMode === 'synth' ? track.synthPreset : undefined;
+              updateMidiParts(
+                trackId,
+                track.midiClips,
+                audioPath ?? undefined,
+                synthPreset
+              );
             }
 
             return updatedTrack;
@@ -532,6 +572,65 @@ export default function DawShell() {
       handleToggleMetronomeFromAI,
       findTracksByPattern,
     ]
+  const handleRenameTrack = useCallback((trackId: string, newName: string) => {
+    setTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId ? { ...track, name: newName } : track
+      )
+    );
+  }, []);
+
+  const handleSetInstrumentMode = useCallback(
+    (trackId: string, mode: 'synth' | 'sampler') => {
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id === trackId && track.type === 'midi') {
+            const updatedTrack: Track = {
+              ...track,
+              instrumentMode: mode,
+              synthPreset: mode === 'synth' ? 'piano' : undefined, // Default to piano preset
+            };
+
+            // Initialize the audio engine with the selected mode
+            if (track.midiClips) {
+              if (mode === 'synth') {
+                // Initialize synth mode with default piano preset
+                updateMidiParts(trackId, track.midiClips, undefined, 'piano');
+              }
+              // For sampler mode, we'll wait for the user to select a sample
+            }
+
+            return updatedTrack;
+          }
+          return track;
+        })
+      );
+    },
+    []
+  );
+
+  const handleSetSynthPreset = useCallback(
+    (trackId: string, presetName: string) => {
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id === trackId && track.type === 'midi' && track.instrumentMode === 'synth') {
+            const updatedTrack: Track = {
+              ...track,
+              synthPreset: presetName,
+            };
+
+            // Re-initialize the audio engine with new preset
+            if (track.midiClips) {
+              updateMidiParts(trackId, track.midiClips, undefined, presetName);
+            }
+
+            return updatedTrack;
+          }
+          return track;
+        })
+      );
+    },
+    []
   );
 
   const handleRightMouseDown = useCallback(() => {
@@ -583,17 +682,26 @@ export default function DawShell() {
           <aside className='w-60 border-right border-slate-800 bg-slate-950 border-r'>
             <TrackList
               tracks={tracks}
+              trackHeight={trackHeight}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
               onAddTrack={handleAddTrackClick}
               onDeleteTrack={handleDeleteTrack}
               onAttachSample={handleAttachSampleToMidiTrack}
+              onRenameTrack={handleRenameTrack}
+              onSetInstrumentMode={handleSetInstrumentMode}
+              onSetSynthPreset={handleSetSynthPreset}
             />
           </aside>
 
           {/* Timeline area */}
           <div className='flex-1 overflow-auto relative bg-slate-900'>
-            <Timeline tracks={tracks} setTracks={setTracks} />
+            <Timeline 
+              tracks={tracks} 
+              setTracks={setTracks} 
+              trackHeight={trackHeight}
+              setTrackHeight={setTrackHeight}
+            />
           </div>
         </div>
 

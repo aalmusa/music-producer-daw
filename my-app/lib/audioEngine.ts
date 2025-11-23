@@ -1,6 +1,7 @@
 // lib/audioEngine.ts
 import * as Tone from 'tone';
 import { MidiClipData, MidiNote, noteNumberToName } from './midiTypes';
+import { getSynthPreset, SynthPresetName, EffectsChain } from './synthPresets';
 
 // Shared musical settings
 export const LOOP_BARS = 16; // same as the number of measures in Timeline
@@ -31,6 +32,18 @@ function getMasterGain(): Tone.Gain {
 const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
 const samplerMap = new Map<string, Tone.Sampler>(); // Samplers for drum samples
+const effectsChainMap = new Map<string, Tone.ToneAudioNode[]>(); // Effects chains per track
+
+// Master output chain - initialized in initAudio()
+let masterLimiter: Tone.Limiter | null = null;
+let masterCompressor: Tone.Compressor | null = null;
+
+/**
+ * Get the master output node - returns Destination if master chain not initialized
+ */
+function getMasterOutput(): Tone.ToneAudioNode {
+  return masterCompressor || Tone.getDestination();
+}
 
 // Audio clip players for audio tracks (4-bar clips quantized to BPM, play once)
 // Key format: "trackId:clipId" to support multiple clips per track
@@ -40,6 +53,24 @@ export async function initAudio() {
   if (!isInitialized) {
     await Tone.start(); // unlocks audio on first click
 
+    // Create master chain after Tone is started
+    if (!masterCompressor) {
+      masterCompressor = new Tone.Compressor({
+        threshold: -20,
+        ratio: 3,
+        attack: 0.003,
+        release: 0.1,
+      });
+    }
+    
+    if (!masterLimiter) {
+      masterLimiter = new Tone.Limiter(-3); // Prevent peaks above -3dB
+    }
+    
+    // Connect master chain
+    masterCompressor.connect(masterLimiter);
+    masterLimiter.toDestination();
+
     transport.bpm.value = 120;
     transport.loop = true;
     transport.loopStart = 0;
@@ -48,6 +79,7 @@ export async function initAudio() {
     // Initialize master gain (lazy initialization)
     const master = getMasterGain();
     metronomeSynth = new Tone.MembraneSynth().connect(master);
+    metronomeSynth = new Tone.MembraneSynth().connect(getMasterOutput());
 
     // Click every quarter note
     metronomeLoop = new Tone.Loop((time: number) => {
@@ -118,9 +150,130 @@ export function getLoopProgress(): number {
 // ============ MIDI SYNTH FUNCTIONS ============
 
 /**
- * Creates or retrieves a synthesizer for a track
+ * Creates an effects chain based on the preset configuration
+ * Returns an array of Tone.js effect nodes
  */
-export function getSynthForTrack(trackId: string): Tone.PolySynth {
+function createEffectsChain(effectsConfig?: EffectsChain): Tone.ToneAudioNode[] {
+  const effects: Tone.ToneAudioNode[] = [];
+  
+  if (!effectsConfig) return effects;
+
+  // EQ - typically first in chain
+  if (effectsConfig.eq) {
+    const eq3 = new Tone.EQ3({
+      low: effectsConfig.eq.low,
+      mid: effectsConfig.eq.mid,
+      high: effectsConfig.eq.high,
+    });
+    effects.push(eq3);
+  }
+
+  // Distortion/Saturation
+  if (effectsConfig.distortion) {
+    const distortion = new Tone.Distortion({
+      distortion: effectsConfig.distortion.distortion,
+      wet: effectsConfig.distortion.wet,
+    });
+    effects.push(distortion);
+  }
+
+  // Compressor - for dynamics control
+  if (effectsConfig.compressor) {
+    const compressor = new Tone.Compressor({
+      threshold: effectsConfig.compressor.threshold,
+      ratio: effectsConfig.compressor.ratio,
+      attack: effectsConfig.compressor.attack,
+      release: effectsConfig.compressor.release,
+    });
+    effects.push(compressor);
+  }
+
+  // Modulation effects
+  if (effectsConfig.chorus) {
+    const chorus = new Tone.Chorus({
+      frequency: effectsConfig.chorus.frequency,
+      delayTime: effectsConfig.chorus.delayTime,
+      depth: effectsConfig.chorus.depth,
+      wet: effectsConfig.chorus.wet,
+    }).start();
+    effects.push(chorus);
+  }
+
+  if (effectsConfig.phaser) {
+    const phaser = new Tone.Phaser({
+      frequency: effectsConfig.phaser.frequency,
+      octaves: effectsConfig.phaser.octaves,
+      baseFrequency: effectsConfig.phaser.baseFrequency,
+      wet: effectsConfig.phaser.wet,
+    });
+    effects.push(phaser);
+  }
+
+  if (effectsConfig.tremolo) {
+    const tremolo = new Tone.Tremolo({
+      frequency: effectsConfig.tremolo.frequency,
+      depth: effectsConfig.tremolo.depth,
+      wet: effectsConfig.tremolo.wet,
+    }).start();
+    effects.push(tremolo);
+  }
+
+  if (effectsConfig.vibrato) {
+    const vibrato = new Tone.Vibrato({
+      frequency: effectsConfig.vibrato.frequency,
+      depth: effectsConfig.vibrato.depth,
+      wet: effectsConfig.vibrato.wet,
+    });
+    effects.push(vibrato);
+  }
+
+  // Time-based effects
+  if (effectsConfig.delay) {
+    const delay = new Tone.FeedbackDelay({
+      delayTime: effectsConfig.delay.delayTime,
+      feedback: effectsConfig.delay.feedback,
+      wet: effectsConfig.delay.wet,
+    });
+    effects.push(delay);
+  }
+
+  // Reverb - typically last in chain
+  if (effectsConfig.reverb) {
+    const reverb = new Tone.Reverb({
+      decay: effectsConfig.reverb.decay,
+      preDelay: effectsConfig.reverb.preDelay,
+      wet: effectsConfig.reverb.wet,
+    });
+    effects.push(reverb);
+  }
+
+  return effects;
+}
+
+/**
+ * Disposes of an existing effects chain for a track
+ */
+function disposeEffectsChain(trackId: string) {
+  const existingEffects = effectsChainMap.get(trackId);
+  if (existingEffects) {
+    existingEffects.forEach(effect => effect.dispose());
+    effectsChainMap.delete(trackId);
+  }
+}
+
+/**
+ * Creates or retrieves a synthesizer for a track
+ * Can use a preset configuration or default to basic synth
+ */
+export function getSynthForTrack(trackId: string, presetName?: string): Tone.PolySynth {
+  // If we're changing presets, dispose of the old synth and effects
+  const existingSynth = synthMap.get(trackId);
+  if (existingSynth && presetName) {
+    existingSynth.dispose();
+    synthMap.delete(trackId);
+    disposeEffectsChain(trackId);
+  }
+
   let synth = synthMap.get(trackId);
 
   if (!synth) {
@@ -136,11 +289,80 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
         release: 1,
       },
     }).connect(getMasterGain());
+    const preset = presetName ? getSynthPreset(presetName as SynthPresetName) : null;
+    
+    // Create the appropriate synth type based on the preset
+    if (preset) {
+      switch (preset.synthType) {
+        case 'FMSynth':
+          synth = new Tone.PolySynth(Tone.FMSynth, preset.options) as any;
+          break;
+        case 'AMSynth':
+          synth = new Tone.PolySynth(Tone.AMSynth, preset.options) as any;
+          break;
+        case 'MonoSynth':
+          synth = new Tone.PolySynth(Tone.MonoSynth, preset.options) as any;
+          break;
+        case 'PluckSynth':
+          synth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.001, decay: 0.5, sustain: 0.1, release: 1 }
+          });
+          break;
+        case 'MetalSynth':
+          synth = new Tone.PolySynth(Tone.FMSynth, {
+            harmonicity: 5.1,
+            modulationIndex: 32,
+            envelope: { attack: 0.001, decay: 1.4, release: 0.2 }
+          });
+          break;
+        default:
+          synth = new Tone.PolySynth(Tone.Synth, preset.options);
+      }
 
-    synthMap.set(trackId, synth);
+      // Create and connect effects chain
+      if (synth && preset.effects) {
+        const effects = createEffectsChain(preset.effects);
+        effectsChainMap.set(trackId, effects);
+        
+        // Connect synth through effects chain to master output
+        if (effects.length > 0) {
+          synth.connect(effects[0]);
+          
+          // Chain effects together
+          for (let i = 0; i < effects.length - 1; i++) {
+            effects[i].connect(effects[i + 1]);
+          }
+          
+          // Connect last effect to master output
+          effects[effects.length - 1].connect(getMasterOutput());
+        } else {
+          synth.connect(getMasterOutput());
+        }
+      } else if (synth) {
+        synth.connect(getMasterOutput());
+      }
+    } else {
+      // Default basic synth
+      synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: {
+          type: 'triangle',
+        },
+        envelope: {
+          attack: 0.005,
+          decay: 0.1,
+          sustain: 0.3,
+          release: 1,
+        },
+      }).connect(getMasterOutput());
+    }
+
+    if (synth) {
+      synthMap.set(trackId, synth);
+    }
   }
 
-  return synth;
+  return synth!;
 }
 
 /**
@@ -176,6 +398,7 @@ export async function getSamplerForTrack(
       },
     }
   ).connect(getMasterGain());
+  ).connect(getMasterOutput());
 
   samplerMap.set(trackId, sampler);
 
@@ -189,7 +412,8 @@ export async function getSamplerForTrack(
 export async function updateMidiParts(
   trackId: string,
   clips: MidiClipData[] | null | undefined,
-  samplerAudioUrl?: string | null // Optional: if provided, use sampler instead of synth
+  samplerAudioUrl?: string | null, // Optional: if provided, use sampler instead of synth
+  synthPreset?: string // Optional: synth preset name
 ) {
   // Remove existing parts if they exist
   const existingParts = midiPartMap.get(trackId);
@@ -212,7 +436,7 @@ export async function updateMidiParts(
   if (samplerAudioUrl) {
     instrument = await getSamplerForTrack(trackId, samplerAudioUrl);
   } else {
-    instrument = getSynthForTrack(trackId);
+    instrument = getSynthForTrack(trackId, synthPreset);
   }
 
   const parts: Tone.Part[] = [];
