@@ -6,12 +6,13 @@ declare module "essentia.js/dist/essentia.js-core.es" {
 }
 
 declare module "essentia.js/dist/essentia-wasm.es" {
-  const EssentiaWASM: any;
-  export default EssentiaWASM;
+  // no default export, only a named export
+  export const EssentiaWASM: any;
 }
 
 declare module "essentia.js/dist/essentia.js-extractor.es" {
-  export { default as EssentiaExtractor } from "essentia.js/dist/extractor/extractor.d";
+  const EssentiaExtractor: any;
+  export default EssentiaExtractor;
 }
 
 declare module "essentia.js/dist/essentia.js-model" {
@@ -24,5 +25,9 @@ declare module "essentia.js/dist/essentia.js-model.es" {
 
 declare module "essentia.js/dist/machinelearning/index" {
   export { EssentiaTFInputExtractor } from "essentia.js/dist/machinelearning/tfjs_input_extractor";
-  export { EssentiaTensorflowJSModel, TensorflowMusiCNN, TensorflowVGGish } from "essentia.js/dist/machinelearning/tfjs_models";
+  export {
+    EssentiaTensorflowJSModel,
+    TensorflowMusiCNN,
+    TensorflowVGGish,
+  } from "essentia.js/dist/machinelearning/tfjs_models";
 }

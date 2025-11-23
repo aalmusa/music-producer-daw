@@ -1,0 +1,11 @@
+{
+  "id": "default",
+  "references": [],
+  "createdAt": "2025-11-23T04:05:55.247Z",
+  "updatedAt": "2025-11-23T04:15:18.079Z",
+  "genre": "Romance",
+  "mood": [
+    "dreamy",
+    "passionate"
+  ]
+}
