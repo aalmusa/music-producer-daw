@@ -26,6 +26,8 @@ interface TimelineProps {
   setTracks: React.Dispatch<React.SetStateAction<Track[]>>;
   trackHeight: number;
   setTrackHeight: React.Dispatch<React.SetStateAction<number>>;
+  bpm: number;
+  metronomeEnabled: boolean;
 }
 
 export default function Timeline({
@@ -33,6 +35,8 @@ export default function Timeline({
   setTracks,
   trackHeight,
   setTrackHeight,
+  bpm,
+  metronomeEnabled,
 }: TimelineProps) {
   const measureCount = LOOP_BARS;
 
@@ -631,9 +635,9 @@ export default function Timeline({
   };
 
   return (
-    <div className='h-full w-full relative' ref={timelineRef} onClick={handleTimelineClick}>
-      {/* Time ruler at the top */}
-      <div className='h-12 border-b border-slate-800 bg-slate-950/80 sticky top-0 z-10 flex text-[10px] text-slate-400' onClick={(e) => e.stopPropagation()}>
+    <div className='flex-1 flex flex-col bg-slate-900 h-full overflow-hidden'>
+      {/* Time ruler at the top - Sticky */}
+      <div className='h-12 border-b border-slate-800 bg-slate-950 shrink-0 flex text-[10px] text-slate-400 border-l border-slate-800' onClick={(e) => e.stopPropagation()}>
         {Array.from({ length: measureCount }).map((_, i) => (
           <div
             key={i}
@@ -644,8 +648,9 @@ export default function Timeline({
         ))}
       </div>
 
-      {/* Track lanes */}
-      <div className='timeline-container'>
+      {/* Track lanes - Scrollable with sync */}
+      <div className='flex-1 overflow-y-auto overflow-x-auto relative pb-10' data-scroll-sync="timeline" ref={timelineRef} onClick={handleTimelineClick}>
+        <div className='timeline-container min-w-full'>
         {tracks.map((track) => (
           <div
             key={track.id}
@@ -940,16 +945,20 @@ export default function Timeline({
             />
           </div>
         ))}
-      </div>
-
-      {/* Playhead line */}
-      <div
-        className='absolute top-12 bottom-0 w-px bg-emerald-400 z-40 cursor-ew-resize group'
-        style={{ left: `${playheadProgress * 100}%` }}
-        onMouseDown={handlePlayheadMouseDown}
-      >
-        {/* Draggable handle at the top */}
-        <div className='absolute -top-3 left-1/2 -translate-x-1/2 w-3 h-3 bg-emerald-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize' />
+        
+        {/* Playhead line - spans full viewport or all tracks, whichever is greater */}
+        <div
+          className='absolute top-0 w-px bg-emerald-400 z-40 cursor-ew-resize group pointer-events-auto'
+          style={{ 
+            left: `${playheadProgress * 100}%`,
+            minHeight: '100%',
+            height: `max(100%, ${tracks.length * trackHeight}px)`
+          }}
+          onMouseDown={handlePlayheadMouseDown}
+        >
+          {/* Draggable handle at the top */}
+          <div className='absolute top-3 left-1/2 -translate-x-1/2 w-3 h-3 bg-emerald-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize' />
+        </div>
       </div>
 
       {/* Piano Roll Modal */}
@@ -964,6 +973,21 @@ export default function Timeline({
           onUpdateClip={(clipData) =>
             handleUpdateMidiClip(editingTrack.id, editingClip.id, clipData)
           }
+          dawState={{
+            tracks: tracks.map((t) => ({
+              id: t.id,
+              name: t.name,
+              type: t.type,
+              volume: t.volume,
+              muted: t.muted,
+              solo: t.solo,
+              instrumentMode: t.instrumentMode,
+              synthPreset: t.synthPreset,
+              samplerAudioUrl: t.samplerAudioUrl,
+            })),
+            bpm,
+            metronomeEnabled,
+          }}
         />
       )}
 
@@ -998,6 +1022,7 @@ export default function Timeline({
             />
           );
         })()}
+      </div>
     </div>
   );
 }
