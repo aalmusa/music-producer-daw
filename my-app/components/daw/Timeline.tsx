@@ -236,6 +236,55 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
     );
   };
 
+  // Copy/duplicate an audio clip to a new position
+  const handleCopyAudioClip = (
+    trackId: string,
+    clipId: string,
+    newStartBar: number
+  ) => {
+    setTracks((prev) =>
+      prev.map((track) => {
+        if (track.id !== trackId) return track;
+
+        // Find the clip to copy
+        const clipToCopy = track.audioClips?.find((c) => c.id === clipId);
+        if (!clipToCopy) return track;
+
+        // Create a new clip with same audio but different ID and position
+        const newClip = createAudioClip(
+          clipToCopy.audioUrl,
+          newStartBar,
+          clipToCopy.name
+        );
+
+        const existingClips = track.audioClips || [];
+        const updatedClips = [...existingClips, newClip];
+
+        return { ...track, audioClips: updatedClips };
+      })
+    );
+  };
+
+  // Duplicate a clip to the next available slot
+  const handleDuplicateAudioClip = (trackId: string, clipId: string) => {
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track) return;
+
+    const clipToDuplicate = track.audioClips?.find((c) => c.id === clipId);
+    if (!clipToDuplicate) return;
+
+    // Find next available slot after this clip
+    const emptySlots = getEmptySlots(trackId);
+    const nextSlot = emptySlots.find((slot) => slot > clipToDuplicate.startBar);
+
+    if (nextSlot !== undefined) {
+      handleCopyAudioClip(trackId, clipId, nextSlot);
+    } else {
+      // No empty slots after this clip
+      alert('No empty slots available after this clip');
+    }
+  };
+
   // Get all empty 4-bar slots for a track (works for both MIDI and audio)
   const getEmptySlots = (trackId: string): number[] => {
     const track = tracks.find((t) => t.id === trackId);
@@ -475,39 +524,124 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                   {getEmptySlots(track.id).map((startBar) => {
                     const slotLeftPercent = (startBar / measureCount) * 100;
                     const slotWidthPercent = (4 / measureCount) * 100;
+                    const hasExistingClips =
+                      (track.audioClips?.length ?? 0) > 0;
 
                     return (
-                      <button
+                      <div
                         key={`empty-audio-${startBar}`}
-                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-emerald-600/70 flex items-center justify-center text-slate-600 hover:text-emerald-400 transition-all cursor-pointer group'
+                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-emerald-600/70 transition-all group'
                         style={{
                           left: `${slotLeftPercent}%`,
                           width: `${slotWidthPercent}%`,
                         }}
-                        onClick={() =>
-                          handleOpenAudioGenerator(track.id, startBar)
-                        }
-                        title='Click to generate audio for this slot'
                       >
-                        <div className='flex flex-col items-center'>
-                          <svg
-                            className='w-6 h-6 opacity-50 group-hover:opacity-100 transition-opacity'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
+                        <div className='h-full flex items-center justify-center gap-2'>
+                          {/* Generate button */}
+                          <button
+                            onClick={() =>
+                              handleOpenAudioGenerator(track.id, startBar)
+                            }
+                            className='flex flex-col items-center text-slate-600 hover:text-emerald-400 transition-colors px-2'
+                            title='Generate new audio with AI'
                           >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M13 10V3L4 14h7v7l9-11h-7z'
-                            />
-                          </svg>
-                          <span className='text-[10px] mt-1 opacity-0 group-hover:opacity-100 transition-opacity'>
-                            Generate
-                          </span>
+                            <svg
+                              className='w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity'
+                              fill='none'
+                              stroke='currentColor'
+                              viewBox='0 0 24 24'
+                            >
+                              <path
+                                strokeLinecap='round'
+                                strokeLinejoin='round'
+                                strokeWidth={2}
+                                d='M13 10V3L4 14h7v7l9-11h-7z'
+                              />
+                            </svg>
+                            <span className='text-[9px] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity'>
+                              Generate
+                            </span>
+                          </button>
+
+                          {/* Copy button - only show if there are existing clips */}
+                          {hasExistingClips && (
+                            <>
+                              <div className='w-px h-6 bg-slate-700/50' />
+                              <div className='relative'>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Toggle dropdown - we'll handle this with a popover
+                                    const dropdown = e.currentTarget
+                                      .nextElementSibling as HTMLElement;
+                                    if (dropdown) {
+                                      dropdown.classList.toggle('hidden');
+                                    }
+                                  }}
+                                  className='flex flex-col items-center text-slate-600 hover:text-blue-400 transition-colors px-2'
+                                  title='Copy existing clip to this slot'
+                                >
+                                  <svg
+                                    className='w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity'
+                                    fill='none'
+                                    stroke='currentColor'
+                                    viewBox='0 0 24 24'
+                                  >
+                                    <path
+                                      strokeLinecap='round'
+                                      strokeLinejoin='round'
+                                      strokeWidth={2}
+                                      d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
+                                    />
+                                  </svg>
+                                  <span className='text-[9px] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity'>
+                                    Copy
+                                  </span>
+                                </button>
+
+                                {/* Dropdown menu for selecting which clip to copy */}
+                                <div className='hidden absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[200px]'>
+                                  <div className='p-2'>
+                                    <div className='text-[10px] text-slate-400 px-2 py-1 font-medium'>
+                                      Select clip to copy:
+                                    </div>
+                                    {track.audioClips?.map((clip) => (
+                                      <button
+                                        key={clip.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCopyAudioClip(
+                                            track.id,
+                                            clip.id,
+                                            startBar
+                                          );
+                                          // Hide dropdown
+                                          const dropdown =
+                                            e.currentTarget.closest(
+                                              '.absolute'
+                                            ) as HTMLElement;
+                                          if (dropdown) {
+                                            dropdown.classList.add('hidden');
+                                          }
+                                        }}
+                                        className='w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 rounded transition-colors'
+                                      >
+                                        <div className='font-medium'>
+                                          {clip.name || 'Audio Clip'}
+                                        </div>
+                                        <div className='text-[10px] text-slate-500'>
+                                          Bar {clip.startBar + 1}-
+                                          {clip.startBar + clip.bars}
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
 
@@ -524,6 +658,9 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                       onDelete={() => handleDeleteAudioClip(track.id, clip.id)}
                       onRegenerate={() =>
                         handleReplaceAudioClip(track.id, clip.id, clip.startBar)
+                      }
+                      onDuplicate={() =>
+                        handleDuplicateAudioClip(track.id, clip.id)
                       }
                     />
                   ))}

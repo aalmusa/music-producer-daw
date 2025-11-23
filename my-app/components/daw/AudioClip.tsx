@@ -17,6 +17,7 @@ interface AudioClipProps {
   onMove: (newStartBar: number) => void;
   onDelete: () => void;
   onRegenerate?: () => void; // Optional callback for regenerating/replacing clip
+  onDuplicate?: () => void; // Optional callback for duplicating clip
 }
 
 export default function AudioClip({
@@ -26,6 +27,7 @@ export default function AudioClip({
   onMove,
   onDelete,
   onRegenerate,
+  onDuplicate,
 }: AudioClipProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
@@ -149,11 +151,46 @@ export default function AudioClip({
       e.preventDefault();
       e.stopPropagation();
 
-      if (window.confirm('Delete this audio clip?')) {
-        onDelete();
-      }
+      // Show context menu with options
+      const menu = document.createElement('div');
+      menu.className = 'fixed bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 py-1';
+      menu.style.left = `${e.clientX}px`;
+      menu.style.top = `${e.clientY}px`;
+
+      const options = [
+        { label: '🔁 Duplicate to Next Slot', action: onDuplicate, condition: !!onDuplicate },
+        { label: '🗑️ Delete', action: onDelete, condition: true },
+      ];
+
+      options.forEach(({ label, action, condition }) => {
+        if (!condition) return;
+        
+        const button = document.createElement('button');
+        button.className = 'w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors';
+        button.textContent = label;
+        button.onclick = () => {
+          if (label.includes('Delete')) {
+            if (window.confirm('Delete this audio clip?')) {
+              action();
+            }
+          } else {
+            action();
+          }
+          menu.remove();
+        };
+        menu.appendChild(button);
+      });
+
+      document.body.appendChild(menu);
+
+      // Remove menu when clicking elsewhere
+      const removeMenu = () => {
+        menu.remove();
+        document.removeEventListener('click', removeMenu);
+      };
+      setTimeout(() => document.addEventListener('click', removeMenu), 0);
     },
-    [onDelete]
+    [onDelete, onDuplicate]
   );
 
   return (
