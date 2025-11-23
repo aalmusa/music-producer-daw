@@ -14,7 +14,7 @@
     }
   ],
   "createdAt": "2025-11-23T11:11:42.640Z",
-  "updatedAt": "2025-11-23T11:13:25.097Z",
+  "updatedAt": "2025-11-23T12:07:42.274Z",
   "aggregate": {
     "bpm": 110,
     "key": "F",
@@ -71,6 +71,6 @@
       ]
     }
   },
-  "genre": "pop",
-  "mood": "happy"
+  "genre": "electronic dance",
+  "mood": "energetic"
 }
