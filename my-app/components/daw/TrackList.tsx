@@ -63,14 +63,14 @@ export default function TrackList({
   };
 
   return (
-    <div className='h-full flex flex-col'>
-      {/* Header */}
-      <div className='h-11.5 flex items-center px-3 border-b border-slate-800 text-xs text-slate-400'>
+    <aside className='w-60 border-r border-slate-800 bg-slate-950 flex flex-col h-full'>
+      {/* Header - Sticky */}
+      <div className='h-12 flex items-center px-3 border-b border-slate-800 text-xs text-slate-400 bg-slate-950 shrink-0'>
         Tracks
       </div>
 
-      {/* Tracks */}
-      <div className='flex-1 overflow-auto'>
+      {/* Tracks - Scrollable with sync (scrollbar hidden) */}
+      <div className='flex-1 overflow-y-auto overflow-x-hidden pb-4' data-scroll-sync="tracklist">
         {tracks.map((track) => {
           const isExpanded = expandedTrackId === track.id;
           const currentSample = audioLibrary.find(
@@ -396,14 +396,14 @@ export default function TrackList({
           );
         })}
       </div>
-
-      {/* Add track button */}
+      
+      {/* Add track button - Fixed at bottom */}
       <button
         onClick={() => onAddTrack?.()}
-        className='h-10 text-xs text-slate-300 border-t border-slate-800 hover:bg-slate-800 transition-colors'
+        className='h-10 text-xs text-slate-300 border-t border-slate-800 hover:bg-slate-800 transition-colors shrink-0'
       >
         + Add track
       </button>
-    </div>
+    </aside>
   );
 }

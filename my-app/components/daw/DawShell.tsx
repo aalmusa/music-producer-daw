@@ -4,25 +4,25 @@ import {
   initAudio,
   removeAllAudioLoopPlayers,
   removeMidiTrack,
+  rewindToStart,
   setBpm as setAudioEngineBpm,
   setAudioLoopMute,
   setAudioLoopVolume,
   setMasterVolume,
   setTrackMute,
   setTrackVolume,
-  toggleMetronome,
-  updateMidiParts,
-  togglePlayPause,
-  rewindToStart,
-  skipForwardBars,
   skipBackBars,
-  isTransportPlaying,
+  skipForwardBars,
+  toggleMetronome,
+  togglePlayPause,
+  updateMidiParts,
 } from '@/lib/audioEngine';
-import { createAudioClip, createEmptyMidiClip, Track } from '@/lib/midiTypes';
+import { createEmptyMidiClip, Track } from '@/lib/midiTypes';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
 import AIAssistant from './AIAssistant';
 import Mixer from './Mixer';
+import SyncScrollContainer from './SyncScrollContainer';
 import Timeline from './Timeline';
 import TrackList from './TrackList';
 import TrackTypeDialog from './TrackTypeDialog';
@@ -48,6 +48,9 @@ export default function DawShell() {
   // Track type selection dialog state
   const [isTrackDialogOpen, setIsTrackDialogOpen] = useState(false);
 
+  // Mixer minimized state
+  const [isMixerMinimized, setIsMixerMinimized] = useState(false);
+
   // BPM state
   const [bpm, setBpm] = useState(120);
 
@@ -68,7 +71,11 @@ export default function DawShell() {
     const handleKeyDown = async (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input field
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
         return;
       }
 
@@ -732,36 +739,29 @@ export default function DawShell() {
 
       {/* Middle content: tracks + timeline + right sidebar */}
       <section className='flex flex-1 overflow-hidden min-h-0'>
-        {/* Left: track list and timeline */}
-        <div className='flex flex-1 overflow-hidden'>
-          {/* Track list column */}
-          <aside className='w-60 border-right border-slate-800 bg-slate-950 border-r'>
-            <TrackList
-              tracks={tracks}
-              trackHeight={trackHeight}
-              onToggleMute={handleToggleMute}
-              onToggleSolo={handleToggleSolo}
-              onAddTrack={handleAddTrackClick}
-              onDeleteTrack={handleDeleteTrack}
-              onAttachSample={handleAttachSampleToMidiTrack}
-              onRenameTrack={handleRenameTrack}
-              onSetInstrumentMode={handleSetInstrumentMode}
-              onSetSynthPreset={handleSetSynthPreset}
-            />
-          </aside>
-
-          {/* Timeline area */}
-          <div className='flex-1 overflow-auto relative bg-slate-900'>
-            <Timeline
-              tracks={tracks}
-              setTracks={setTracks}
-              trackHeight={trackHeight}
-              setTrackHeight={setTrackHeight}
-              bpm={bpm}
-              metronomeEnabled={metronomeEnabled}
-            />
-          </div>
-        </div>
+        {/* Left: track list and timeline with synchronized scrolling */}
+        <SyncScrollContainer>
+          <TrackList
+            tracks={tracks}
+            trackHeight={trackHeight}
+            onToggleMute={handleToggleMute}
+            onToggleSolo={handleToggleSolo}
+            onAddTrack={handleAddTrackClick}
+            onDeleteTrack={handleDeleteTrack}
+            onAttachSample={handleAttachSampleToMidiTrack}
+            onRenameTrack={handleRenameTrack}
+            onSetInstrumentMode={handleSetInstrumentMode}
+            onSetSynthPreset={handleSetSynthPreset}
+          />
+          <Timeline
+            tracks={tracks}
+            setTracks={setTracks}
+            trackHeight={trackHeight}
+            setTrackHeight={setTrackHeight}
+            bpm={bpm}
+            metronomeEnabled={metronomeEnabled}
+          />
+        </SyncScrollContainer>
 
         {/* Drag handle between middle and right */}
         <div
@@ -796,13 +796,19 @@ export default function DawShell() {
         </aside>
       </section>
 
-      {/* Bottom mixer - made a bit taller */}
-      <footer className='h-52 border-t border-slate-800 bg-slate-950 shrink-0'>
+      {/* Bottom mixer - dynamically sized based on minimized state */}
+      <footer
+        className={`${
+          isMixerMinimized ? 'h-8' : 'h-52'
+        } border-t border-slate-800 bg-slate-950 shrink-0 transition-all duration-200`}
+      >
         <Mixer
           tracks={tracks}
           masterVolume={masterVolume}
           onTrackVolumeChange={handleVolumeChange}
           onMasterVolumeChange={handleMasterVolumeChange}
+          isMinimized={isMixerMinimized}
+          onToggleMinimize={setIsMixerMinimized}
         />
       </footer>
 

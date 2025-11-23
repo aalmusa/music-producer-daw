@@ -20,10 +20,12 @@
 # production
 /build
 
+/audio
 # misc
 .DS_Store
 *.pem
 
+/audio
 # debug
 npm-debug.log*
 yarn-debug.log*
