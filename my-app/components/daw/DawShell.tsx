@@ -340,6 +340,9 @@ export default function DawShell() {
     async (response: DAWAssistantResponse) => {
       if (!response.success || response.actions.length === 0) return;
 
+      // Keep track of newly created tracks by name -> id mapping
+      const trackNameToId = new Map<string, string>();
+
       // Process actions sequentially with proper state updates
       for (const action of response.actions) {
         // Add a small delay to ensure state updates are processed
@@ -356,8 +359,9 @@ export default function DawShell() {
                   action.trackType === 'midi' ? 'Synth' : 'Audio'
                 } ${trackNumber}`;
 
+              const trackId = crypto.randomUUID();
               const newTrack: Track = {
-                id: crypto.randomUUID(),
+                id: trackId,
                 name: trackName,
                 color: trackColors[colorIndex],
                 type: action.trackType,
@@ -374,11 +378,14 @@ export default function DawShell() {
                   : { audioClips: [] }),
               };
 
+              // Store the mapping of track name to ID for subsequent actions
+              trackNameToId.set(trackName, trackId);
+
               setTracks((prev) => [...prev, newTrack]);
 
               // Initialize MIDI part if it's a MIDI track
               if (action.trackType === 'midi' && newTrack.midiClips) {
-                updateMidiParts(newTrack.id, newTrack.midiClips);
+                updateMidiParts(trackId, newTrack.midiClips);
               }
 
               console.log(`✓ Created ${action.trackType} track: ${trackName}`);
@@ -415,49 +422,74 @@ export default function DawShell() {
             break;
 
           case 'select_instrument':
-            const trackForInstrument = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
-            );
-            if (trackForInstrument && action.instrumentPath) {
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForInstrument = action.trackId;
+            if (!trackIdForInstrument && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForInstrument = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForInstrument) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForInstrument = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForInstrument && action.instrumentPath) {
               handleAttachSampleToMidiTrack(
-                trackForInstrument.id,
+                trackIdForInstrument,
                 action.instrumentPath
               );
               console.log(
-                `✓ Set instrument for ${trackForInstrument.name}: ${action.instrumentPath}`
+                `✓ Set instrument for ${action.trackName}: ${action.instrumentPath}`
               );
             }
             break;
 
           case 'set_instrument_mode':
-            const trackForMode = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
-            );
-            if (
-              trackForMode &&
-              trackForMode.type === 'midi' &&
-              action.instrumentMode
-            ) {
-              handleSetInstrumentMode(trackForMode.id, action.instrumentMode);
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForMode = action.trackId;
+            if (!trackIdForMode && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForMode = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForMode) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForMode = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForMode && action.instrumentMode) {
+              handleSetInstrumentMode(trackIdForMode, action.instrumentMode);
               console.log(
-                `✓ Set instrument mode for ${trackForMode.name}: ${action.instrumentMode}`
+                `✓ Set instrument mode for ${action.trackName}: ${action.instrumentMode}`
               );
             }
             break;
 
           case 'set_synth_preset':
-            const trackForPreset = tracks.find(
-              (t) => t.id === action.trackId || t.name === action.trackName
-            );
-            if (
-              trackForPreset &&
-              trackForPreset.type === 'midi' &&
-              action.synthPreset
-            ) {
+            // Try to find track by ID first, then name, then check our newly created tracks map
+            let trackIdForPreset = action.trackId;
+            if (!trackIdForPreset && action.trackName) {
+              // Check if this is a newly created track
+              trackIdForPreset = trackNameToId.get(action.trackName);
+              // If not in our map, search existing tracks
+              if (!trackIdForPreset) {
+                const foundTrack = tracks.find(
+                  (t) => t.name === action.trackName
+                );
+                trackIdForPreset = foundTrack?.id;
+              }
+            }
+
+            if (trackIdForPreset && action.synthPreset) {
               // Trust that AI sent correct sequence - will set mode if needed
-              handleSetSynthPreset(trackForPreset.id, action.synthPreset);
+              handleSetSynthPreset(trackIdForPreset, action.synthPreset);
               console.log(
-                `✓ Set synth preset for ${trackForPreset.name}: ${action.synthPreset}`
+                `✓ Set synth preset for ${action.trackName}: ${action.synthPreset}`
               );
             }
             break;
