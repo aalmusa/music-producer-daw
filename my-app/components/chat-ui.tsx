@@ -11,7 +11,6 @@ import {
   InputGroupInput,
 } from "./ui/input-group";
 import { Separator } from "./ui/separator";
-import Threads from "./Threads";
 
 
 type message = {
@@ -134,15 +133,6 @@ export function ChatUI() {
 
     return (
         <div className="flex h-full flex-col bg-background text-foreground overflow-hidden relative">
-          {/* Background Threads animation */}
-          <div className="absolute inset-0 w-full h-full pointer-events-none z-0">
-            <Threads
-              amplitude={3}
-              distance={0}
-              enableMouseInteraction={true}
-              color={[1, 1, 1]}
-            />
-          </div>
           {/* Main scrollable area - scrollbar on right edge */}
           <main className="flex-1 overflow-y-auto relative z-10">
             <div className="flex justify-center px-4 py-6">
@@ -231,7 +221,7 @@ export function ChatUI() {
                       key={s}
                       type="button"
                       onClick={() => handleSuggestionClick(s)}
-                      className="rounded-full border border-border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-accent-foreground hover:border-primary hover:shadow-md hover:scale-[1.02]"
+                      className="cursor-pointer rounded-full border border-border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-accent-foreground hover:border-primary hover:shadow-md hover:scale-[1.02]"
                     >
                       {s}
                     </button>
@@ -290,7 +280,7 @@ export function ChatUI() {
                     size="icon"
                     onClick={handleAttachFile}
                     aria-label="Attach file"
-                    className="transition-all duration-200 hover:bg-accent hover:border-primary hover:shadow-md hover:scale-105"
+                    className="cursor-pointer transition-all duration-200 hover:bg-accent hover:border-primary hover:shadow-md hover:scale-105"
                   >
                     <Paperclip />
                   </Button>
@@ -307,7 +297,7 @@ export function ChatUI() {
                         type="submit"
                         size="icon-xs"
                         disabled={!input.trim() && attachedFiles.length === 0}
-                        className="rounded-full transition-all duration-200 hover:bg-primary/90 hover:shadow-md hover:scale-110 disabled:hover:scale-100 disabled:hover:shadow-none"
+                        className="cursor-pointer rounded-full transition-all duration-200 hover:bg-primary/90 hover:shadow-md hover:scale-110 disabled:hover:scale-100 disabled:hover:shadow-none disabled:cursor-not-allowed"
                       >
                         ➤
                       </InputGroupButton>

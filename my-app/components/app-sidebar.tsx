@@ -6,20 +6,10 @@ import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
-  SidebarRail,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
 } from "@/components/ui/sidebar"
-import { 
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 
 // Sample configuration data - this would be updated based on chat context
 const config = {
@@ -31,12 +21,9 @@ const config = {
 
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [model, setModel] = React.useState<string>("Instruments");
-
-  
   return (
     
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Music className="h-5 w-5" />
@@ -90,39 +77,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {config.genre}
                 </div>
               </div>
-
-              {/* Instrument */}
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Instrument Set</span>
-                </div>
-
-                <div className="pl-1">
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select instruments" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel>Presets</SelectLabel>
-                        <SelectItem value="instruments">
-                          Full Instruments
-                        </SelectItem>
-                        <SelectItem value="drums">Drums Only</SelectItem>
-                        <SelectItem value="bass">Bass Focus</SelectItem>
-                        <SelectItem value="synth">
-                          Synth Lead / Pads
-                        </SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarRail />
     </Sidebar>
   )
 }
