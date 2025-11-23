@@ -28,6 +28,10 @@ export interface Track {
   audioUrl?: string;
   // For MIDI tracks - now supports multiple clips
   midiClips?: MidiClipData[];
+  // For MIDI tracks - instrument mode selection
+  instrumentMode?: null | 'synth' | 'sampler'; // null = no mode selected yet
+  // For MIDI tracks using synth mode - which preset to use
+  synthPreset?: string; // preset name like 'piano', 'bass', etc.
   // For MIDI tracks that use samples instead of synth
   // Maps MIDI note numbers to audio files
   samplerAudioUrl?: string | null; // Audio file to use as sample
