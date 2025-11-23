@@ -8,6 +8,8 @@ interface MixerProps {
   masterVolume: number;
   onTrackVolumeChange: (trackId: string, volume: number) => void;
   onMasterVolumeChange: (volume: number) => void;
+  isMinimized?: boolean;
+  onToggleMinimize?: (minimized: boolean) => void;
 }
 
 export default function Mixer({
@@ -15,37 +17,55 @@ export default function Mixer({
   masterVolume,
   onTrackVolumeChange,
   onMasterVolumeChange,
+  isMinimized = false,
+  onToggleMinimize,
 }: MixerProps) {
+  const handleToggle = () => {
+    const newState = !isMinimized;
+    onToggleMinimize?.(newState);
+  };
+
   return (
     <div className='h-full flex flex-col'>
-      <div className='h-8 flex items-center px-3 border-b border-slate-800 text-xs text-slate-400'>
-        Mixer
+      <div className='h-8 flex items-center justify-between px-3 border-b border-slate-800 text-xs text-slate-400'>
+        <span>Mixer</span>
+        <button
+          onClick={handleToggle}
+          className='px-2 py-0.5 hover:bg-slate-800 rounded transition-colors'
+          title={isMinimized ? 'Expand mixer' : 'Minimize mixer'}
+        >
+          {isMinimized ? '▲' : '▼'}
+        </button>
       </div>
 
-      <div className='flex-1 flex gap-4 px-4 py-2 overflow-x-auto'>
-        {/* Individual track faders */}
-        {tracks.map((track) => (
-          <ChannelStrip
-            key={track.id}
-            name={track.name}
-            volume={track.volume}
-            color={track.color}
-            onVolumeChange={(vol) => onTrackVolumeChange(track.id, vol)}
-          />
-        ))}
+      {!isMinimized && (
+        <div className='flex-1 overflow-x-auto overflow-y-hidden'>
+          <div className='flex gap-4 px-4 py-2 min-w-min'>
+            {/* Master fader - now first on the left */}
+            <ChannelStrip
+              name='Master Volume'
+              volume={masterVolume}
+              color='bg-red-500'
+              onVolumeChange={onMasterVolumeChange}
+              isMaster
+            />
 
-        {/* Divider */}
-        <div className='w-px bg-slate-700 mx-2 self-stretch' />
+            {/* Divider */}
+            <div className='w-px bg-slate-700 mx-2 self-stretch' />
 
-        {/* Master fader */}
-        <ChannelStrip
-          name='Master'
-          volume={masterVolume}
-          color='bg-red-500'
-          onVolumeChange={onMasterVolumeChange}
-          isMaster
-        />
-      </div>
+            {/* Individual track faders */}
+            {tracks.map((track) => (
+              <ChannelStrip
+                key={track.id}
+                name={track.name}
+                volume={track.volume}
+              color={track.color}
+              onVolumeChange={(vol) => onTrackVolumeChange(track.id, vol)}
+            />
+          ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -117,40 +137,39 @@ function ChannelStrip({
   return (
     <div
       className={`${
-        isMaster ? 'w-24' : 'w-20'
+        isMaster ? 'w-28' : 'w-24'
       } flex flex-col items-center text-xs text-slate-300`}
     >
-      <div className='flex-1 flex flex-col items-center justify-end pb-2'>
-        {/* Fader track */}
+      {/* Fader track */}
+      <div
+        ref={faderRef}
+        className='w-8 h-32 rounded bg-slate-800 border border-slate-700 flex items-end overflow-hidden relative cursor-ns-resize'
+        onMouseDown={handleMouseDown}
+      >
+        {/* Volume fill */}
         <div
-          ref={faderRef}
-          className='w-8 h-32 rounded bg-slate-800 border border-slate-700 flex items-end overflow-hidden relative cursor-ns-resize'
-          onMouseDown={handleMouseDown}
-        >
-          {/* Volume fill */}
-          <div
-            className={`w-full ${color} transition-all`}
-            style={{ height: `${volume * 100}%` }}
-          />
+          className={`w-full ${color} transition-all`}
+          style={{ height: `${volume * 100}%` }}
+        />
 
-          {/* Fader knob */}
-          <div
-            className='absolute left-0 right-0 h-3 bg-slate-200 border border-slate-400 rounded-sm shadow-lg'
-            style={{ bottom: `calc(${volume * 100}% - 6px)` }}
-          />
-        </div>
+        {/* Fader knob */}
+        <div
+          className='absolute left-0 right-0 h-3 bg-slate-200 border border-slate-400 rounded-sm shadow-lg'
+          style={{ bottom: `calc(${volume * 100}% - 6px)` }}
+        />
+      </div>
 
-        {/* dB display */}
-        <div className='mt-2 text-[10px] text-slate-400 font-mono min-w-[3rem] text-center'>
-          {volumeToDb(volume)} dB
-        </div>
+      {/* dB display */}
+      <div className='mt-2 text-[10px] text-slate-400 font-mono min-w-[3rem] text-center'>
+        {volumeToDb(volume)} dB
       </div>
 
       {/* Track name */}
       <div
-        className={`mt-1 ${
-          isMaster ? 'text-xs font-semibold' : 'text-[10px]'
-        } text-center truncate w-full`}
+        className={`mt-1 px-1 ${
+          isMaster ? 'text-sm font-semibold' : 'text-xs'
+        } text-center truncate w-full text-slate-100`}
+        title={name}
       >
         {name}
       </div>
