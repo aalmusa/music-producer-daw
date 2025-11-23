@@ -22,8 +22,6 @@ function extractGenresAndMoods(rawGenreResult: any): {
   genres: string[];
   moods: string[];
 } {
-  // TODO: this depends on how you post-process musicnn tags
-  // for now just stub it
   return {
     genres: [],
     moods: [],
@@ -121,6 +119,8 @@ export async function addReferenceFromPath(
   };
 
   await saveSongSpec(updated);
-  console.log(`✅ Added reference, updated BPM: ${updated.bpm}, Key: ${updated.key} from aggregate analysis`);
+  console.log(
+    `✅ Added reference, updated BPM: ${updated.bpm}, Key: ${updated.key} from aggregate analysis`
+  );
   return updated;
 }
