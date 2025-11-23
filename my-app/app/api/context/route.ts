@@ -1,330 +1,342 @@
 // app/api/context/route.ts
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { NextResponse } from 'next/server';
-import path from 'path';
-import * as z from 'zod';
+import { NextResponse } from "next/server";
+import {
+  HumanMessage,
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+  trimMessages,
+} from "@langchain/core/messages";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { MemorySaver } from "@langchain/langgraph";
+import { tool } from "@langchain/core/tools";
+import path from "path";
+import * as z from "zod";
 
-import { tool } from 'langchain';
-import { analyzeFromPath } from './analyzeSongProcess';
-import { generateProductionSpec } from './productionSpec';
-import { addReferenceFromPath } from './referenceManager';
-import { loadSongSpec, SongSpec, updateSongSpec } from './SongSpecStore';
+// --- INTERNAL IMPORTS ---
+import { analyzeFromPath } from "./analyzeSongProcess";
+import { loadSongSpec, updateSongSpec, SongSpec } from "./SongSpecStore";
+import { generateProductionSpec } from "./productionSpec";
+import { addReferenceFromPath } from "./referenceManager";
 
-const conversationModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash',
-  apiKey: process.env.GOOGLE_API_KEY,
-  temperature: 0.8,
-});
+// Initialize Memory for conversation history
+const checkpointer = new MemorySaver();
 
-// Optional tool, available to agents if you wire tools up later
-export const getReferenceSongContext = tool(
-  async ({ filePath }: { filePath: string }) => {
+// --- TOOL DEFINITIONS ---
+
+// Tool 1: Update the SongSpec
+const createUpdateSpecTool = (songId: string) =>
+  tool(
+    async (input) => {
+      const updates: Partial<SongSpec> = {};
+
+      if (input.genre) updates.genre = input.genre;
+
+      if (input.mood) {
+        updates.mood = Array.isArray(input.mood)
+          ? input.mood.join(", ")
+          : input.mood;
+      }
+
+      if (input.bpm) updates.bpm = input.bpm;
+      if (input.key) updates.key = input.key;
+      if (input.scale) updates.scale = input.scale;
+      if (input.instruments) updates.instruments = input.instruments;
+      if (input.chordProgression)
+        updates.chordProgression = input.chordProgression;
+
+      await updateSongSpec(updates, songId);
+      return `Successfully updated SongSpec for ID ${songId}. New values saved to database.`;
+    },
+    {
+      name: "update_song_spec",
+      description:
+        "Call this tool to update the song's genre, mood, bpm, key, scale, instruments, or chords in the database. ONLY call this if the user explicitly asks to change something or if you have inferred a definite genre/mood from context.",
+      schema: z.object({
+        genre: z.string().optional(),
+        mood: z.union([z.string(), z.array(z.string())]).optional(),
+        bpm: z.number().optional(),
+        key: z.string().optional(),
+        scale: z.string().optional(),
+        instruments: z.array(z.string()).optional(),
+        chordProgression: z
+          .object({
+            global: z.array(z.string()),
+          })
+          .optional(),
+      }),
+    }
+  );
+
+// Tool 2: Analyze Audio
+const analyzeAudioTool = tool(
+  async ({ filePath }) => {
     const absPath = path.isAbsolute(filePath)
       ? filePath
       : path.join(process.cwd(), filePath);
-
-    // Only returns audio analysis (bpm, key, energy segments)
-    const result = await analyzeFromPath(absPath);
-    return result;
+    try {
+      const result = await analyzeFromPath(absPath);
+      return JSON.stringify(result);
+    } catch (e) {
+      return "Error analyzing audio file. File might not exist.";
+    }
   },
   {
-    name: 'song_analysis',
-    description:
-      'Analyze a reference audio file and return audio analysis (bpm, key, energySegments). Genre is left null and should be inferred by the assistant. Input is the path to the audio file.',
+    name: "analyze_audio_reference",
+    description: "Analyze a specific audio file to get BPM, Key, and Energy.",
     schema: z.object({
-      filePath: z
-        .string()
-        .describe(
-          'Absolute or project relative path to the reference audio file'
-        ),
+      filePath: z.string(),
     }),
   }
 );
 
-// Helper to give the model a readable summary of the current spec
-function summarizeSpecForPrompt(spec: SongSpec): string {
+// Tool 3: Confirm Completion (The "Greenlight" Tool)
+const createCompleteSpecTool = () =>
+  tool(
+    async () => {
+      return "SongSpec marked as complete. The UI will now display the proceed button.";
+    },
+    {
+      name: "confirm_spec_completion",
+      description:
+        "Call this tool IMMEDIATELY when the SongSpec is fully defined (Genre, Mood, BPM, Key, Instruments). This triggers the 'Next Step' button in the user interface.",
+      schema: z.object({}),
+    }
+  );
+
+// --- HELPER: SYSTEM PROMPT GENERATOR ---
+function generateSystemPrompt(spec: SongSpec): string {
   const refCount = spec.references?.length ?? 0;
-  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'unknown';
-  const key = spec.key ?? spec.aggregate?.key ?? 'unknown';
-  const scale = spec.scale ?? spec.aggregate?.scale ?? 'unknown';
 
-  const genre = spec.genre ?? 'none yet';
+  // Generate a readable list of existing files so the AI knows they exist
+  const referenceList =
+    spec.references && spec.references.length > 0
+      ? spec.references
+          .map((r, index) => {
+            const name = r.sourcePath
+              ? path.basename(r.sourcePath)
+              : "Unknown File";
+            return `  ${index + 1}. "${name}" (Detected: ${r.bpm} BPM, ${
+              r.key
+            } ${r.scale})`;
+          })
+          .join("\n")
+      : "  - None";
 
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? "unknown";
+  const key = spec.key ?? spec.aggregate?.key ?? "unknown";
+  const scale = spec.scale ?? spec.aggregate?.scale ?? "unknown";
+
+  const genre = spec.genre ?? "unknown";
   const mood = Array.isArray(spec.mood)
-    ? spec.mood.join(', ')
-    : spec.mood ?? 'none yet';
+    ? spec.mood.join(", ")
+    : spec.mood ?? "unknown";
 
   const instruments =
     Array.isArray(spec.instruments) && spec.instruments.length > 0
-      ? spec.instruments.join(', ')
-      : 'none yet';
+      ? spec.instruments.join(", ")
+      : "unknown";
 
   const chords =
     spec.chordProgression && Array.isArray(spec.chordProgression.global)
-      ? spec.chordProgression.global.join(' → ')
-      : 'none yet';
+      ? spec.chordProgression.global.join(" → ")
+      : "unknown";
+
+  const missingFields = [];
+  if (genre === "unknown") missingFields.push("Genre");
+  if (mood === "unknown") missingFields.push("Mood");
+  if (bpm === "unknown") missingFields.push("BPM");
+  if (key === "unknown") missingFields.push("Key");
+  if (instruments === "unknown") missingFields.push("Instruments");
 
   return `
-Current song summary:
+You are an expert AI Executive Music Producer. Your goal is to guide the user through creating a complete 'SongSpec' so we can start development.
+
+=== CURRENT PROJECT STATE (Source of Truth) ===
 - ID: ${spec.id}
-- References: ${refCount}
-- Current BPM: ${bpm}
-- Current Key: ${key} ${scale}
-- Current Genre: ${genre}
-- Current Mood: ${mood}
-- Current Instruments: ${instruments}
-- Current Global Chord Progression: ${chords}
+- Reference Tracks (${refCount}):
+${referenceList}
+
+- Genre: ${genre}
+- Mood: ${mood}
+- BPM: ${bpm}
+- Key: ${key} ${scale}
+- Instruments: ${instruments}
+- Chords: ${chords}
+===============================================
+
+### YOUR CORE DIRECTIVES:
+
+**1. MEMORY & CONTEXT**
+   - You have memory of this entire conversation. Refer back to things the user said earlier.
+   - If the user provides a reference track, analyze what that implies for the missing fields.
+
+**2. THE "FILL-THE-BLANKS" STRATEGY**
+   - Look at the "CURRENT PROJECT STATE" above.
+   - If values are "unknown", you MUST proactively guide the user to define them.
+   - Pick the most important missing field (Genre/Mood -> BPM/Key -> Instruments) and ask about it.
+   - **CRITICAL:** If a Reference Track is listed above (e.g., "beat.wav"), **DO NOT ask the user to upload it again.** It is already in the system. Instead, ask: "I see you uploaded [filename]. Is this the vibe you want for the final track?"
+
+**3. TOOL USAGE & UPDATES**
+   - **User Intent:** If the user explicitly answers a question (e.g., "Let's do 140 BPM"), call \`update_song_spec\`.
+   - **Inference:** If the user gives a vague instruction, infer the values and call \`update_song_spec\`.
+   - **analyzeAudioTool:** If this tool is called, adjust message to tell the user the action has been completed and their file has been read
+
+**4. THE "GREENLIGHT" CONDITION (PROACTIVE)**
+   - **Check the status:** Are Genre, Mood, BPM, Key, and Instruments all defined?
+   - **If NO:** Continue guiding the user.
+   - **If YES (Complete):**
+     1. You **MUST** call the \`confirm_spec_completion\` tool IMMEDIATELY. Do not wait for the user to ask.
+     2. Then, tell the user: "The SongSpec looks complete! I've enabled the next step button for you."
+
+### TONE & STYLE
+- Be professional but creative.
+- Act like a collaborative partner.
 `;
 }
 
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const songId = searchParams.get('songId') || 'default';
-
-    // Load the current spec
-    const spec = await loadSongSpec(songId);
-
-    return NextResponse.json(spec, { status: 200 });
-  } catch (error: any) {
-    console.error('Error in GET /api/context:', error);
-
-    return NextResponse.json(
-      {
-        error: error?.message ?? 'Internal Server Error',
-      },
-      { status: 500 }
-    );
-  }
-}
+// --- MAIN ROUTE ---
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const {
       prompt,
-      songId = 'default',
+      songId = "default",
       referenceFilePath,
       referenceFilePaths,
-    } = body as {
-      prompt: string;
-      songId?: string;
-      referenceFilePath?: string;
-      referenceFilePaths?: string[];
-    };
+    } = body;
 
-    if (!prompt || typeof prompt !== 'string') {
+    if (!prompt) {
       return NextResponse.json(
-        { error: 'prompt is required' },
+        { error: "prompt is required" },
         { status: 400 }
       );
     }
 
-    // 1. Load current spec
+    // 1. PRE-PROCESSING: Load spec & Handle uploads
     let spec = await loadSongSpec(songId);
 
-    // 2. If new reference file paths are provided, add them as references
-    const filePathsToProcess: string[] = [];
+    const filesToProcess: string[] = [];
     if (referenceFilePaths && Array.isArray(referenceFilePaths)) {
-      filePathsToProcess.push(...referenceFilePaths);
+      filesToProcess.push(...referenceFilePaths);
     } else if (referenceFilePath) {
-      filePathsToProcess.push(referenceFilePath);
+      filesToProcess.push(referenceFilePath);
     }
 
-    for (const filePath of filePathsToProcess) {
-      if (filePath) {
-        spec = await addReferenceFromPath(songId, filePath);
+    if (filesToProcess.length > 0) {
+      for (const fp of filesToProcess) {
+        if (fp) {
+          // Update the local 'spec' variable directly with the result of the addition
+          spec = await addReferenceFromPath(songId, fp);
+        }
+      }
+
+      if (!spec.instruments || !spec.chordProgression) {
+        try {
+          const production = await generateProductionSpec(spec);
+          const updates: Partial<SongSpec> = {
+            instruments: production.instruments,
+            chordProgression: production.chordProgression,
+          };
+          if (spec.references.length === 0) {
+            if (production.bpm) updates.bpm = production.bpm;
+            if (production.key) updates.key = production.key;
+            if (production.scale) updates.scale = production.scale;
+          }
+          await updateSongSpec(updates, songId);
+          // Reload local spec to ensure it has the production updates
+          spec = await loadSongSpec(songId);
+        } catch (err) {
+          console.error("Auto-production generation failed:", err);
+        }
       }
     }
 
-    // 3. Generate production spec if needed
-    const shouldGenerateProduction =
-      (!spec.instruments || !spec.chordProgression) &&
-      (spec.references.length > 0 || spec.genre || spec.mood);
+    // 2. SETUP AGENT
+    const model = new ChatGoogleGenerativeAI({
+      model: "gemini-2.5-flash",
+      apiKey: process.env.GOOGLE_API_KEY,
+      temperature: 0.7,
+    });
 
-    if (shouldGenerateProduction) {
-      const production = await generateProductionSpec(spec);
-      const updates: Partial<SongSpec> = {
-        instruments: production.instruments,
-        chordProgression: production.chordProgression,
-      };
-
-      if (spec.references.length === 0) {
-        if (production.bpm) updates.bpm = production.bpm;
-        if (production.key) updates.key = production.key;
-        if (production.scale) updates.scale = production.scale;
-      }
-
-      spec = await updateSongSpec(updates, songId);
-      console.log('Generated production spec:', updates);
-    }
-
-    // 4. Construct system prompt with strong grounding rules
-    const systemPrompt = `
-You are an AI assistant that helps the user define a SongSpec for a new track.
-
-You already have a current SongSpec. Use it as the single source of truth for current values.
-
-${summarizeSpecForPrompt(spec)}
-
-The SongSpec may include:
-- multiple reference analyses (under "references")
-- an aggregate analysis (under "aggregate") with computed BPM, key, scale from references
-- LLM suggested instruments and chordProgression
-
-IMPORTANT RULES (GROUNDING):
-
-1. Ground truth from SongSpec:
-   - Whenever you mention the current BPM, key, scale, instruments, chord progression,
-     references, or aggregate values, you MUST read them from the Current SongSpec JSON below.
-   - If a field is missing in the SongSpec, you must say that it is missing. Do not guess numeric values,
-     instruments, or chords.
-
-2. Genre and Mood:
-   - You may infer genre and mood from the user's description and from the reference analyses.
-   - If you infer or change genre or mood, include them in the JSON and clearly mention what you changed
-     in your natural language reply.
-
-3. BPM and Key:
-   - The current BPM, key, and scale are whatever is stored in the SongSpec.
-   - If the user asks questions such as "What is the BPM?" or "What key is this in?",
-     you must answer by reading the existing values from the SongSpec. Do not design a new value.
-   - You are allowed to change BPM or key only if the user explicitly asks you to set or change them,
-     for example "set the BPM to 120", "change it to C major", or "make it faster at around 130 BPM".
-   - If you change BPM or key because the user asked you to, include the new values in the JSON and clearly
-     state the change.
-
-4. Instruments and Chord Progression:
-   - The current instruments and chord progression are whatever is stored in the SongSpec.
-   - If the user asks "what instruments are we using?" or "what is the current chord progression?",
-     you MUST answer by reading the values from the SongSpec. Do not invent new lists unless the user
-     explicitly asks you to change them.
-   - You are allowed to change instruments or chordProgression only if the user explicitly asks you to modify them,
-     for example "add strings", "replace the piano with a synth", or "change the chords to ii–V–I".
-   - If you change instruments or chordProgression because the user asked you to, include the updated values in the JSON
-     and clearly state the change in your reply.
-
-FORMATTING RULES (VERY IMPORTANT):
-
-- Your natural language reply should be concise and should NOT dump the full SongSpec JSON.
-- Do NOT include any \`references\` or \`aggregate\` fields in the JSON you output.
-- At the very end of your reply, output a small JSON block labelled \`SongSpec\` with ONLY the fields that changed
-  or that you are explicitly setting. Allowed keys in this JSON are:
-  \`genre\`, \`mood\`, \`bpm\`, \`key\`, \`scale\`, \`instruments\`, \`chordProgression\`.
-- The JSON block MUST be valid JSON and must not contain comments or trailing commas.
-
-
-`;
-
-    const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(prompt),
+    const tools = [
+      createUpdateSpecTool(songId),
+      analyzeAudioTool,
+      createCompleteSpecTool(),
     ];
 
-    const res = await conversationModel.invoke(messages);
+    // --- DYNAMIC STATE MODIFIER (Defined INSIDE handler to capture fresh 'spec') ---
+    // This ensures the system prompt uses the 'spec' we just updated in memory,
+    // avoiding any database read latency issues.
+    const stateModifier = async (state: any) => {
+      const systemPrompt = generateSystemPrompt(spec);
 
-    const replyText =
-      typeof res.content === 'string'
-        ? res.content
-        : Array.isArray(res.content)
-        ? res.content.map((c: any) => c.text ?? '').join('')
-        : String(res.content);
+      const trimmed = await trimMessages(state.messages, {
+        strategy: "last",
+        maxTokens: 384,
+        startOn: "human",
+        endOn: ["human", "tool"],
+        tokenCounter: (msgs) => msgs.length,
+        includeSystem: false,
+      });
 
-    // 5. Try to parse SongSpec JSON from reply
-    try {
-      const firstBrace = replyText.indexOf('{');
-      const lastBrace = replyText.lastIndexOf('}');
+      return [new SystemMessage(systemPrompt), ...trimmed];
+    };
 
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        const jsonString = replyText.slice(firstBrace, lastBrace + 1);
-        const parsedSpec = JSON.parse(jsonString) as Partial<SongSpec>;
+    // Create the graph with the dynamic modifier
+    const agent = createReactAgent({
+      llm: model,
+      tools,
+      checkpointSaver: checkpointer,
+      stateModifier: stateModifier,
+    });
 
-        const updates: Partial<SongSpec> = {};
+    // 3. RUN AGENT
+    const result = await agent.invoke(
+      { messages: [new HumanMessage(prompt)] },
+      { configurable: { thread_id: songId } }
+    );
 
-        // Genre and mood can be inferred or changed by the model
-        if (
-          parsedSpec.genre !== undefined &&
-          parsedSpec.genre !== null &&
-          parsedSpec.genre !== ''
-        ) {
-          updates.genre = parsedSpec.genre;
-        }
-        if (
-          parsedSpec.mood !== undefined &&
-          parsedSpec.mood !== null &&
-          parsedSpec.mood !== ''
-        ) {
-          updates.mood = parsedSpec.mood;
-        }
+    // 4. CHECK FOR COMPLETION SIGNAL
+    const messages = result.messages;
+    let canProceed = false;
 
-        // BPM and key: only updated when model explicitly sets them
-        if (
-          parsedSpec.bpm !== undefined &&
-          parsedSpec.bpm !== null &&
-          typeof parsedSpec.bpm === 'number' &&
-          parsedSpec.bpm > 0
-        ) {
-          updates.bpm = parsedSpec.bpm;
-        }
-        if (
-          parsedSpec.key !== undefined &&
-          parsedSpec.key !== null &&
-          parsedSpec.key !== ''
-        ) {
-          updates.key = parsedSpec.key;
-        }
-        if (
-          parsedSpec.scale !== undefined &&
-          parsedSpec.scale !== null &&
-          parsedSpec.scale !== ''
-        ) {
-          updates.scale = parsedSpec.scale;
-        }
-
-        // Instruments and chord progression: only when explicitly changed
-        if (parsedSpec.instruments !== undefined) {
-          updates.instruments = parsedSpec.instruments;
-        }
-        if (parsedSpec.chordProgression !== undefined) {
-          updates.chordProgression = parsedSpec.chordProgression;
-        }
-
-        if (Object.keys(updates).length > 0) {
-          spec = await updateSongSpec(updates, songId);
-          console.log('Updated spec from LLM response:', updates);
-        } else {
-          console.log(
-            'LLM response contained SongSpec JSON but no valid updates to save'
-          );
-        }
-      } else {
-        console.log(
-          'No JSON block found in LLM response. This is fine if it is only conversational'
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (
+        msg instanceof AIMessage &&
+        msg.tool_calls &&
+        msg.tool_calls.length > 0
+      ) {
+        const hasCompletionCall = msg.tool_calls.some(
+          (tc) => tc.name === "confirm_spec_completion"
         );
+        if (hasCompletionCall) {
+          canProceed = true;
+          break;
+        }
       }
-    } catch (parseError) {
-      console.log(
-        'Could not parse SongSpec from LLM response. This is fine.',
-        parseError
-      );
     }
 
-    // 6. Normal successful response
+    const lastMessage = messages[messages.length - 1];
+
+    // Reload spec one last time to return the absolute latest DB state to frontend
+    const finalSpec = await loadSongSpec(songId);
+
     return NextResponse.json(
       {
-        reply: replyText,
-        songSpec: spec,
+        reply: lastMessage.content,
+        songSpec: finalSpec,
+        canProceed,
       },
       { status: 200 }
     );
   } catch (error: any) {
-    console.error('Error in POST /api/context:', error);
-
+    console.error("Error in POST /api/context:", error);
     return NextResponse.json(
-      {
-        error: error?.message ?? 'Internal Server Error',
-      },
+      { error: error?.message ?? "Internal Server Error" },
       { status: 500 }
     );
   }
