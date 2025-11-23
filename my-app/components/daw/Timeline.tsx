@@ -10,13 +10,14 @@ import WaveformTrack from './WaveformTrack';
 interface TimelineProps {
   tracks: Track[];
   setTracks: React.Dispatch<React.SetStateAction<Track[]>>;
+  trackHeight: number;
+  setTrackHeight: React.Dispatch<React.SetStateAction<number>>;
 }
 
-export default function Timeline({ tracks, setTracks }: TimelineProps) {
+export default function Timeline({ tracks, setTracks, trackHeight, setTrackHeight }: TimelineProps) {
   const measureCount = LOOP_BARS;
 
   const [playheadProgress, setPlayheadProgress] = useState(0);
-  const [trackHeight, setTrackHeight] = useState(96);
 
   // Piano roll modal state
   const [pianoRollOpen, setPianoRollOpen] = useState(false);
