@@ -14,33 +14,34 @@
     }
   ],
   "createdAt": "2025-11-23T07:18:46.949Z",
-  "updatedAt": "2025-11-23T07:18:58.674Z",
+  "updatedAt": "2025-11-23T09:22:54.912Z",
   "aggregate": {
     "bpm": 110,
     "key": "F",
     "scale": "major",
-    "bpmRange": [110.31187926153204, 110.31187926153204],
-    "keysConsidered": ["F_major"],
+    "bpmRange": [
+      110.31187926153204,
+      110.31187926153204
+    ],
+    "keysConsidered": [
+      "F_major"
+    ],
     "genres": [],
     "moods": []
   },
-  "bpm": 110,
-  "key": "F",
+  "bpm": 140,
+  "key": "F minor",
   "scale": "major",
   "instruments": [
-    "Drums",
-    "Bass Guitar",
-    "Piano",
-    "Strings",
-    "Acoustic Guitar"
+    "808s",
+    "Trap Drums",
+    "Synth Lead",
+    "Synth Pads"
   ],
-  "chordProgression": {
-    "global": ["Fmaj7", "Dm7", "Gm7", "C7"],
-    "bySection": {
-      "intro": ["Fmaj7", "Dm7", "Gm7", "C7"],
-      "verse": ["Fmaj7", "Dm7", "Gm7", "C7"],
-      "chorus": ["Bbmaj7", "Fmaj7/A", "Gm7", "C7"],
-      "bridge": ["Am7", "Dm7", "Gm7", "C7sus4", "C7"]
-    }
-  }
+  "chordProgression": [
+    "Fm",
+    "Db"
+  ],
+  "genre": "Trap Rap",
+  "mood": "Energetic, Gritty"
 }

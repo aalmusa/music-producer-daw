@@ -9,6 +9,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { loadSongSpec, type SongSpec } from '../context/SongSpecStore';
+import { audioLibrary, getAudioFileById } from '@/lib/audioLibrary';
 
 // Initialize the LLM with function calling
 // Lower temperature for more deterministic tool calling behavior
@@ -62,9 +63,22 @@ const createTrackWithInstrumentTool = new DynamicStructuredTool({
         'Track name - use clean defaults like "Piano", "Bass", "Guitar", OR use the custom name if user specifies one (e.g., "Dark Piano", "Bass 1", "Lead Synth"). Avoid redundant words like "Track" or "Channel".'
       ),
     instrument: z
-      .enum(['piano', 'bass', 'lead', 'pad', 'bells', 'pluck', 'hihat', 'clap'])
+      .enum([
+        // Synth instruments
+        'piano', 'bass', 'lead', 'pad', 'bells', 'pluck',
+        // Sampler instruments - instruments
+        'guitar', 'trumpet',
+        // Sampler instruments - house drums
+        'house-clap', 'house-hihat', 'house-kick',
+        // Sampler instruments - rap drums
+        '808', 'rap-clap', 'rap-hat', 'rap-kick',
+        // Sampler instruments - rock drums
+        'rock-hat', 'rock-kick', 'rock-open-hat', 'rock-snare',
+        // Generic drum names (defaults)
+        'hihat', 'clap', 'kick', 'snare', 'open-hat',
+      ])
       .describe(
-        'Instrument type: piano, bass, lead (guitar), pad, bells, pluck (strings), hihat, clap'
+        'Instrument type. Synth: piano, bass, lead (guitar), pad, bells, pluck (strings). Sampler instruments: guitar, trumpet, house-clap, house-hihat, house-kick, 808, rap-clap, rap-hat, rap-kick, rock-hat, rock-kick, rock-open-hat, rock-snare. Generic: hihat, clap, kick, snare, open-hat (defaults to house/rock styles).'
       ),
   }),
   func: async ({ trackName, instrument }) => {
@@ -683,7 +697,58 @@ const toggleMetronomeTool = new DynamicStructuredTool({
   },
 });
 
-// Helper function to generate actions for a specific instrument
+/**
+ * Maps instrument names to audio library sample IDs
+ * Returns the sample ID if found, or null if it should use synth instead
+ */
+function getSampleIdForInstrument(instrument: string): string | null {
+  const lowerInstrument = instrument.toLowerCase();
+  
+  // Map instrument names to sample IDs from audio library
+  const instrumentToSampleMap: Record<string, string> = {
+    // Instruments
+    'bass': 'bass',
+    'guitar': 'guitar',
+    'piano': 'piano',
+    'trumpet': 'trumpet',
+    // House drums
+    'house-clap': 'house-clap',
+    'house-hihat': 'house-hihat',
+    'house-hi-hat': 'house-hihat',
+    'house-kick': 'house-kick',
+    // Rap drums
+    '808': 'rap-808',
+    'rap-808': 'rap-808',
+    'rap-clap': 'rap-clap',
+    'rap-hat': 'rap-hat',
+    'rap-hihat': 'rap-hat',
+    'rap-hi-hat': 'rap-hat',
+    'rap-kick': 'rap-kick',
+    // Rock drums
+    'rock-hat': 'rock-hat',
+    'rock-hihat': 'rock-hat',
+    'rock-hi-hat': 'rock-hat',
+    'rock-kick': 'rock-kick',
+    'rock-open-hat': 'rock-open-hat',
+    'rock-open-hihat': 'rock-open-hat',
+    'rock-snare': 'rock-snare',
+    // Generic drum names (default to house style)
+    'hihat': 'house-hihat',
+    'hi-hat': 'house-hihat',
+    'clap': 'house-clap',
+    'kick': 'house-kick',
+    'snare': 'rock-snare',
+    'open-hat': 'rock-open-hat',
+    'open-hihat': 'rock-open-hat',
+  };
+
+  return instrumentToSampleMap[lowerInstrument] || null;
+}
+
+/**
+ * Helper function to generate actions for a specific instrument
+ * Now supports all samples from the audio library
+ */
 function generateActionsForInstrument(
   trackName: string,
   instrument: string
@@ -698,26 +763,45 @@ function generateActionsForInstrument(
     reasoning: `Creating MIDI track for ${instrument}`,
   });
 
-  // Configure based on instrument type
-  if (instrument === 'hihat' || instrument === 'clap') {
-    // Sampler instruments
-    actions.push({
-      type: 'set_instrument_mode',
-      trackName,
-      instrumentMode: 'sampler',
-      reasoning: `Setting ${trackName} to sampler mode`,
-    });
+  // Check if this instrument should use a sampler sample
+  const sampleId = getSampleIdForInstrument(instrument);
+  
+  if (sampleId) {
+    // Use sampler with audio file from library
+    const audioFile = getAudioFileById(sampleId);
+    if (audioFile) {
+      actions.push({
+        type: 'set_instrument_mode',
+        trackName,
+        instrumentMode: 'sampler',
+        reasoning: `Setting ${trackName} to sampler mode`,
+      });
 
-    const audioPath =
-      instrument === 'hihat' ? '/audio/hihat.wav' : '/audio/clap.wav';
-    actions.push({
-      type: 'select_instrument',
-      trackName,
-      instrumentPath: audioPath,
-      reasoning: `Loading ${instrument} sample`,
-    });
+      actions.push({
+        type: 'select_instrument',
+        trackName,
+        instrumentPath: audioFile.path,
+        reasoning: `Loading ${audioFile.name} sample`,
+      });
+    } else {
+      // Fallback: if sample not found, use synth
+      console.warn(`Sample not found for instrument: ${instrument}, using synth instead`);
+      actions.push({
+        type: 'set_instrument_mode',
+        trackName,
+        instrumentMode: 'synth',
+        reasoning: `Setting ${trackName} to synth mode`,
+      });
+
+      actions.push({
+        type: 'set_synth_preset',
+        trackName,
+        synthPreset: instrument,
+        reasoning: `Applying ${instrument} preset`,
+      });
+    }
   } else {
-    // Synth instruments
+    // Use synth for instruments not in sample library
     actions.push({
       type: 'set_instrument_mode',
       trackName,
@@ -896,7 +980,7 @@ ${
 ${userContext ? `**User Context:** ${userContext}` : ''}
 
 **Available Tools (USE THESE TO PERFORM ACTIONS):**
-- create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap). USE THIS when user wants a track with a specific instrument.
+- create_track_with_instrument: Create a MIDI track with a specific instrument. Supports both synth instruments (piano, bass, lead, pad, bells, pluck) and sampler instruments (guitar, trumpet, and all drum samples). USE THIS when user wants a track with a specific instrument.
 - create_empty_track: Create an empty MIDI track (when you want to ask user what instrument they want)
 - create_audio_track: Create an audio track for audio files/loops. USE THIS when user wants an audio track or for drums, vocals, recorded instruments.
 - suggest_comprehensive_tracks: Generate a comprehensive list of 5-8 varied track suggestions. USE THIS when user asks for track ideas, suggestions, or "what tracks should I create". This creates a full, varied track setup with different synth presets AND audio tracks.
@@ -909,14 +993,31 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - toggle_metronome: Turn metronome on/off. USE THIS when user wants to enable/disable metronome.
 
 **Instrument Mapping & Track Naming:**
+
+**Synth Instruments (use synthesized sounds):**
 - Piano, Keyboard → instrument: "piano"
-- Bass, Sub Bass, 808 → instrument: "bass"
-- Guitar, Lead Guitar → instrument: "lead"
+- Bass, Sub Bass → instrument: "bass"
+- Guitar (lead), Lead Guitar → instrument: "lead"
 - Pad, Atmosphere, Synth Pad → instrument: "pad"
 - Bells, Chimes → instrument: "bells"
 - Strings, Pluck, Arp → instrument: "pluck"
-- Hi-hat, Hi Hat, Hihat → instrument: "hihat"
-- Clap, Claps → instrument: "clap"
+
+**Sampler Instruments (use audio samples from library):**
+- Guitar (acoustic/electric) → instrument: "guitar"
+- Trumpet, Brass → instrument: "trumpet"
+- 808, 808 Bass → instrument: "808"
+- Hi-hat, Hi Hat, Hihat → instrument: "hihat" (defaults to house style)
+- Clap, Claps → instrument: "clap" (defaults to house style)
+- Kick, Kick Drum → instrument: "kick" (defaults to house style)
+- Snare, Snare Drum → instrument: "snare" (defaults to rock style)
+- Open Hi-hat, Open Hat → instrument: "open-hat" (defaults to rock style)
+
+**Genre-Specific Drum Samples:**
+- House Drums: "house-clap", "house-hihat", "house-kick"
+- Rap/Hip-Hop Drums: "808", "rap-clap", "rap-hat", "rap-kick"
+- Rock Drums: "rock-hat", "rock-kick", "rock-open-hat", "rock-snare"
+
+**Note:** When user requests generic drum names (hihat, clap, kick, snare), use the generic instrument names which will default to appropriate styles. For specific genres, use the genre-specific names (house-, rap-, rock-).
 
 **Track Naming Guidelines:**
 - DEFAULT: Use clean names like "Piano", "Bass", "Guitar", "Drums", "Vocals", "Pad" etc.
@@ -933,7 +1034,8 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 **Examples of CORRECT behavior:**
 - User: "Create a piano track" → trackName="Piano", instrument="piano"
 - User: "Add a bass track" → trackName="Bass", instrument="bass"
-- User: "Add a guitar" → trackName="Guitar", instrument="lead"
+- User: "Add a guitar" → trackName="Guitar", instrument="guitar" (uses sampler sample)
+- User: "Add a lead guitar" → trackName="Lead Guitar", instrument="lead" (uses synth)
 - User: "Create a piano called Dark Piano" → trackName="Dark Piano", instrument="piano"
 - User: "Add a bass named Sub Bass" → trackName="Sub Bass", instrument="bass"
 - User: "Create drums called Beat 1" → trackName="Beat 1"
@@ -943,7 +1045,9 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - User: "Make the track names more descriptive" → You MUST call rename_track for each track with clearer names
 - User: "Change track names to show their purpose" → You MUST call rename_track multiple times with purpose-based names
 - User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
-- User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
+- User: "Make a drum track" → You MUST call create_track_with_instrument (use "kick" for kick, "hihat" for hi-hat, "clap" for clap, "snare" for snare)
+- User: "Add a trumpet" → trackName="Trumpet", instrument="trumpet" (uses sampler sample)
+- User: "Add an 808" → trackName="808", instrument="808" (uses rap 808 sample)
 - User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
 - User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
 - User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 5-8 varied tracks)
