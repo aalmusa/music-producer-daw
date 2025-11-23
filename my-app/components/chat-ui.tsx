@@ -11,6 +11,7 @@ import {
   InputGroupInput,
 } from "./ui/input-group";
 import { Separator } from "./ui/separator";
+import { useSongSpec } from "@/lib/song-spec-context";
 
 type Message = {
   id: string;
@@ -40,6 +41,7 @@ export function ChatUI() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { updateSongSpec } = useSongSpec();
 
   function addMessage(
     content: string,
@@ -141,7 +143,11 @@ export function ChatUI() {
 
       // Show assistant reply
       addMessage(assistantReply, "Ai");
-      // If you want, you can also store ctxData.songSpec in state later
+      
+      // Update the song spec in context if provided
+      if (ctxData.songSpec) {
+        updateSongSpec(ctxData.songSpec);
+      }
 
     } catch (err) {
       console.error("Send error:", err);

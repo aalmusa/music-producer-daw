@@ -1,0 +1,51 @@
+{
+  "id": "default",
+  "references": [],
+  "createdAt": "2025-11-23T06:40:41.745Z",
+  "updatedAt": "2025-11-23T07:36:27.810Z",
+  "bpm": 120,
+  "key": "Gb",
+  "scale": "major",
+  "genre": "Hip Hop",
+  "instruments": [
+    "Drums",
+    "Bass Guitar",
+    "Electric Guitar",
+    "Electric Guitar",
+    "Organ"
+  ],
+  "chordProgression": {
+    "global": [
+      "Gm",
+      "Eb",
+      "Bb",
+      "F"
+    ],
+    "bySection": {
+      "intro": [
+        "Gm",
+        "Eb",
+        "Gm",
+        "Eb"
+      ],
+      "verse": [
+        "Gm",
+        "Eb",
+        "Bb",
+        "F"
+      ],
+      "chorus": [
+        "Bb",
+        "F",
+        "Gm",
+        "Eb"
+      ],
+      "bridge": [
+        "Cm",
+        "F",
+        "D7",
+        "Gm"
+      ]
+    }
+  }
+}

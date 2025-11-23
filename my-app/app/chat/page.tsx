@@ -4,15 +4,18 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
+import { SongSpecProvider } from "@/lib/song-spec-context"
 
 export default function ChatPage() {
   return (
-    <SidebarProvider className="h-screen">
-      <AppSidebar />
-      <SidebarInset className="h-screen">
-        <ChatUI />
-      </SidebarInset>
-    </SidebarProvider>
+    <SongSpecProvider>
+      <SidebarProvider className="h-screen">
+        <AppSidebar />
+        <SidebarInset className="h-screen">
+          <ChatUI />
+        </SidebarInset>
+      </SidebarProvider>
+    </SongSpecProvider>
   )
 }
 
