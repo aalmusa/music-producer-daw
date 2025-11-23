@@ -1,0 +1,29 @@
+{
+  "id": "default",
+  "references": [],
+  "createdAt": "2025-11-23T07:36:48.067Z",
+  "updatedAt": "2025-11-23T07:37:20.534Z",
+  "genre": "House EDM",
+  "mood": [
+    "Energetic",
+    "Danceable"
+  ],
+  "instruments": [
+    "Drum Machine",
+    "Synthesizer",
+    "Electric Piano",
+    "Vocal Samples"
+  ],
+  "chordProgression": {
+    "global": [
+      "Dmaj7",
+      "Amaj7",
+      "E7",
+      "F#m7"
+    ],
+    "bySection": {}
+  },
+  "bpm": 126,
+  "key": "A",
+  "scale": "major"
+}

@@ -5,6 +5,7 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { loadSongSpec, type SongSpec } from '../context/SongSpecStore';
 
 // Initialize the LLM with function calling
 const llm = new ChatGoogleGenerativeAI({
@@ -26,6 +27,36 @@ interface MidiAssistantRequest {
   trackId: string;
   trackName: string;
   userContext?: string;
+  songId?: string;
+}
+
+// Helper function to format song context for prompts
+function formatSongContext(spec: SongSpec): string {
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'not set';
+  const key = spec.key ?? spec.aggregate?.key ?? 'not set';
+  const scale = spec.scale ?? spec.aggregate?.scale ?? '';
+  const genre = spec.genre ?? 'not set';
+  const mood = Array.isArray(spec.mood)
+    ? spec.mood.join(', ')
+    : spec.mood ?? 'not set';
+  const instruments =
+    Array.isArray(spec.instruments) && spec.instruments.length > 0
+      ? spec.instruments.join(', ')
+      : 'not set';
+  const chords =
+    spec.chordProgression && Array.isArray(spec.chordProgression.global)
+      ? spec.chordProgression.global.join(' → ')
+      : 'not set';
+
+  return `
+**Song Context (Overall Vision):**
+- Genre: ${genre}
+- Mood: ${mood}
+- BPM: ${bpm}
+- Key: ${key}${scale ? ` ${scale}` : ''}
+- Instruments: ${instruments}
+- Chord Progression: ${chords}
+`;
 }
 
 interface MidiAssistantResponse {
@@ -266,11 +297,14 @@ async function midiAssistantAgent(
   trackId: string,
   trackName: string,
   userContext?: string,
+  songContext?: SongSpec,
   _retryCount = 0
 ): Promise<MidiAssistantResponse> {
   try {
     // Build the system prompt with current context
+    const songContextText = songContext ? formatSongContext(songContext) : '';
     const systemPrompt = `You are an expert MIDI editing assistant integrated into a Digital Audio Workstation (DAW) piano roll editor.
+${songContextText}
 Your primary job is to help users create and edit MIDI notes for melodies, chord progressions, bass lines, and musical patterns.
 
 **CRITICAL RULES:**
@@ -640,8 +674,15 @@ Do NOT include any text before or after the JSON. Only return the JSON object.`;
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as MidiAssistantRequest;
-    const { message, dawState, clipData, trackId, trackName, userContext } =
-      body;
+    const {
+      message,
+      dawState,
+      clipData,
+      trackId,
+      trackName,
+      userContext,
+      songId = 'default',
+    } = body;
 
     // Validate required fields
     if (!message || !dawState || !clipData || !trackId || !trackName) {
@@ -654,6 +695,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch song context
+    const songContext = await loadSongSpec(songId);
+
     // Run the agent
     const result = await midiAssistantAgent(
       message,
@@ -661,7 +705,8 @@ export async function POST(request: NextRequest) {
       clipData,
       trackId,
       trackName,
-      userContext
+      userContext,
+      songContext
     );
 
     return NextResponse.json(result, { status: result.success ? 200 : 500 });

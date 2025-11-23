@@ -8,6 +8,7 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
+import { loadSongSpec } from '../context/SongSpecStore';
 
 // Initialize clients
 const llm = new ChatGoogleGenerativeAI({
@@ -39,6 +40,24 @@ function createInstrumentPrompt(
   const { genre, mood, tempo, key, timeSignature } = songContext;
 
   return `A ${mood} ${instrument} ${genre} loop in ${key} at ${tempo} BPM, ${timeSignature} time signature. ${agentReasoning}. This is a 4-bar melodic loop designed for music production.`;
+}
+
+// Helper function to merge song spec with provided song context
+function mergeSongContext(
+  spec: Awaited<ReturnType<typeof loadSongSpec>>,
+  providedContext: SongContext
+): SongContext {
+  // Use values from spec if available, otherwise fall back to provided context
+  return {
+    genre: spec.genre || providedContext.genre,
+    mood: Array.isArray(spec.mood)
+      ? spec.mood.join(', ')
+      : spec.mood || providedContext.mood,
+    tempo: spec.bpm ?? spec.aggregate?.bpm ?? providedContext.tempo,
+    key: spec.key ?? spec.aggregate?.key ?? providedContext.key,
+    timeSignature: providedContext.timeSignature, // Keep provided time signature
+    description: providedContext.description,
+  };
 }
 
 // Main agent logic
@@ -167,16 +186,28 @@ ${songContext.description ? `- Description: ${songContext.description}` : ''}`;
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as MusicProductionRequest;
-    const { songContext, userRequest } = body;
+    const body = (await request.json()) as MusicProductionRequest & {
+      songId?: string;
+    };
+    const {
+      songContext: providedContext,
+      userRequest,
+      songId = 'default',
+    } = body;
 
     // Validate required fields
-    if (!songContext || !userRequest) {
+    if (!providedContext || !userRequest) {
       return NextResponse.json(
         { error: 'Missing required fields: songContext or userRequest' },
         { status: 400 }
       );
     }
+
+    // Fetch song context from the context API
+    const songSpec = await loadSongSpec(songId);
+
+    // Merge the fetched context with the provided context
+    const songContext = mergeSongContext(songSpec, providedContext);
 
     // Run the agent
     const result = await musicProductionAgent(songContext, userRequest);

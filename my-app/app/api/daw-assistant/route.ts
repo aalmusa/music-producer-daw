@@ -8,6 +8,7 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { loadSongSpec, type SongSpec } from '../context/SongSpecStore';
 
 // Initialize the LLM with function calling
 // Lower temperature for more deterministic tool calling behavior
@@ -539,6 +540,35 @@ function isActionRequest(message: string): boolean {
   return actionKeywords.some((keyword) => lowerMessage.includes(keyword));
 }
 
+// Helper function to format song context for prompts
+function formatSongContext(spec: SongSpec): string {
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'not set';
+  const key = spec.key ?? spec.aggregate?.key ?? 'not set';
+  const scale = spec.scale ?? spec.aggregate?.scale ?? '';
+  const genre = spec.genre ?? 'not set';
+  const mood = Array.isArray(spec.mood)
+    ? spec.mood.join(', ')
+    : spec.mood ?? 'not set';
+  const instruments =
+    Array.isArray(spec.instruments) && spec.instruments.length > 0
+      ? spec.instruments.join(', ')
+      : 'not set';
+  const chords =
+    spec.chordProgression && Array.isArray(spec.chordProgression.global)
+      ? spec.chordProgression.global.join(' → ')
+      : 'not set';
+
+  return `
+**Song Context (Overall Vision):**
+- Genre: ${genre}
+- Mood: ${mood}
+- BPM: ${bpm}
+- Key: ${key}${scale ? ` ${scale}` : ''}
+- Instruments: ${instruments}
+- Chord Progression: ${chords}
+`;
+}
+
 /**
  * DAW Assistant Agent with Tool Calling
  *
@@ -553,6 +583,7 @@ async function dawAssistantAgent(
   message: string,
   dawState: DAWAssistantRequest['dawState'],
   userContext?: string,
+  songContext?: SongSpec,
   retryCount = 0
 ): Promise<DAWAssistantResponse> {
   try {
@@ -562,9 +593,11 @@ async function dawAssistantAgent(
       ? `\n⚠️ CRITICAL: The user is requesting an ACTION. You MUST call the appropriate tool(s) to perform the action. DO NOT just describe what you will do - actually call the tool(s) now!\n`
       : '';
 
+    const songContextText = songContext ? formatSongContext(songContext) : '';
     const systemPrompt = `You are an expert music production assistant integrated into a Digital Audio Workstation (DAW). 
 Your primary job is to PERFORM ACTIONS when users request them, not just describe what you would do.
 
+${songContextText}
 ${actionEmphasis}
 
 **CRITICAL RULES:**
@@ -755,7 +788,13 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
         );
         // Retry with a more explicit prompt
         const retryPrompt = `${message}\n\nIMPORTANT: You must call the appropriate tool(s) to perform this action. Do not just describe what you will do - actually call the tool(s) now.`;
-        return dawAssistantAgent(retryPrompt, dawState, userContext, 1);
+        return dawAssistantAgent(
+          retryPrompt,
+          dawState,
+          userContext,
+          songContext,
+          1
+        );
       }
 
       // Pure conversational response with no actions
@@ -789,8 +828,10 @@ Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as DAWAssistantRequest;
-    const { message, dawState, userContext } = body;
+    const body = (await request.json()) as DAWAssistantRequest & {
+      songId?: string;
+    };
+    const { message, dawState, userContext, songId = 'default' } = body;
 
     // Validate required fields
     if (!message || !dawState) {
@@ -800,8 +841,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch song context
+    const songContext = await loadSongSpec(songId);
+
     // Run the agent
-    const result = await dawAssistantAgent(message, dawState, userContext);
+    const result = await dawAssistantAgent(
+      message,
+      dawState,
+      userContext,
+      songContext
+    );
 
     return NextResponse.json(result, { status: result.success ? 200 : 500 });
   } catch (error) {
