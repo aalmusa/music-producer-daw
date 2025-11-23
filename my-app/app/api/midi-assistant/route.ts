@@ -428,9 +428,10 @@ IMPORTANT: You must respond with ONLY a valid JSON object in this exact format:
       "velocity": 0.8 (number 0-1)
     }
   ],
-  "clearExisting": false (boolean, true if user wants to replace everything),
   "message": "Your response message here"
 }
+
+NOTE: All existing notes will be automatically cleared before adding new notes. You don't need to specify clearExisting.
 
 Do NOT include any text before or after the JSON. Only return the JSON object.`;
 
@@ -594,12 +595,15 @@ Do NOT include any text before or after the JSON. Only return the JSON object.`;
             })
           );
 
+          // Always clear existing notes before adding new ones
           updatedClipData = {
             ...clipData,
-            notes: parsed.clearExisting
-              ? notesToAdd
-              : [...clipData.notes, ...notesToAdd],
+            notes: notesToAdd,
           };
+
+          console.log(
+            `✅ Cleared existing notes and added ${notesToAdd.length} new notes`
+          );
 
           console.log(
             '✅ Created updated clip data with',
