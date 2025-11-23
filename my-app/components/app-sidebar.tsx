@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Music, Gauge, Clock, Zap } from "lucide-react"
+import { Music, Gauge, Zap, Music2 } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -16,12 +16,12 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import { PianoKeyboard } from "@/components/piano-keyboard"
 
 // Sample configuration data - this would be updated based on chat context
 const config = {
   bpm: 120,
-  timeSignature: "4/4",
-  key: "C Major",
+  key: "G♭ Major",
   genre: "Synthwave",
 }
 
@@ -76,33 +76,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Music className="h-5 w-5" />
-          <span className="font-semibold">Configuration</span>
+          <span className="font-semibold text-base">Configuration</span>
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Current Track</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-base">Current Track</SidebarGroupLabel>
           <SidebarGroupContent>
             <div className="space-y-4 px-2 py-2">
-              {/* BPM */}
+              {/* Tempo */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Gauge className="h-3.5 w-3.5" />
-                  <span>BPM</span>
+                  <span>Tempo</span>
                 </div>
                 <div className="text-lg font-semibold pl-5">
-                  {config.bpm}
-                </div>
-              </div>
-
-              {/* Time Signature */}
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>Time Signature</span>
-                </div>
-                <div className="text-lg font-semibold pl-5">
-                  {config.timeSignature}
+                  {config.bpm} bpm
                 </div>
               </div>
 
@@ -120,6 +109,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               {/* Genre */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Music2 className="h-3.5 w-3.5" />
                   <span>Genre</span>
                 </div>
                 <div className="text-lg font-semibold pl-5">
@@ -179,6 +169,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       </div>
                     </HoverCardContent>
                   </HoverCard>
+                </div>
+              </div>
+
+              {/* Scale */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Music className="h-3.5 w-3.5" />
+                  <span>Scale</span>
+                </div>
+                <div className="pl-5">
+                  <PianoKeyboard className="w-full" keySignature={config.key} />
                 </div>
               </div>
             </div>
