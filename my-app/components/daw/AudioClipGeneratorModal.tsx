@@ -21,11 +21,15 @@ export default function AudioClipGeneratorModal({
   onClipGenerated,
 }: AudioClipGeneratorModalProps) {
   const [prompt, setPrompt] = useState('');
+  const [includeChords, setIncludeChords] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
+  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(
+    null
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewPlayer, setPreviewPlayer] = useState<Tone.Player | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [enhancedPrompt, setEnhancedPrompt] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -36,20 +40,49 @@ export default function AudioClipGeneratorModal({
     setIsGenerating(true);
     setError(null);
     setGeneratedAudioUrl(null);
+    setEnhancedPrompt(null);
 
     try {
       // Calculate duration for 4 bars at current BPM
       const transport = Tone.getTransport();
       const fourBarsDurationSeconds = transport.toSeconds('4m');
       const musicLengthMs = fourBarsDurationSeconds * 1000;
+      const bpm = transport.bpm.value;
 
+      // Step 1: Use LangChain agent to enhance the prompt
+      console.log('Step 1: Enhancing prompt with LangChain agent...');
+      const agentResponse = await fetch('/api/audio-loop-agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userPrompt: prompt,
+          includeChords,
+          bpm,
+          trackType: 'audio',
+        }),
+      });
+
+      if (!agentResponse.ok) {
+        throw new Error('Failed to enhance prompt');
+      }
+
+      const agentData = await agentResponse.json();
+      const finalPrompt = agentData.enhancedPrompt || prompt;
+      setEnhancedPrompt(finalPrompt);
+
+      console.log('✓ Enhanced prompt:', finalPrompt);
+
+      // Step 2: Generate audio with ElevenLabs using enhanced prompt
+      console.log('Step 2: Generating audio with ElevenLabs...');
       const response = await fetch('/api/elevenlabs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt,
+          prompt: finalPrompt,
           musicLengthMs,
         }),
       });
@@ -138,9 +171,11 @@ export default function AudioClipGeneratorModal({
 
     // Reset state
     setPrompt('');
+    setIncludeChords(false);
     setGeneratedAudioUrl(null);
     setIsPlaying(false);
     setError(null);
+    setEnhancedPrompt(null);
 
     onClose();
   };
@@ -152,10 +187,7 @@ export default function AudioClipGeneratorModal({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className='fixed inset-0 bg-black/70 z-50'
-        onClick={handleClose}
-      />
+      <div className='fixed inset-0 bg-black/70 z-50' onClick={handleClose} />
 
       {/* Modal */}
       <div className='fixed inset-0 z-50 flex items-center justify-center p-4'>
@@ -190,6 +222,60 @@ export default function AudioClipGeneratorModal({
                 disabled={isGenerating}
               />
             </div>
+
+            {/* Chord Toggle */}
+            <div className='flex items-center justify-between p-4 bg-slate-800 rounded-lg border border-slate-700'>
+              <div className='flex-1'>
+                <label className='block text-sm font-medium text-slate-300'>
+                  Include Chords
+                </label>
+                <p className='text-xs text-slate-500 mt-1'>
+                  Enable for harmonic content, disable for rhythm-only or
+                  single-note patterns
+                </p>
+              </div>
+              <button
+                type='button'
+                onClick={() => setIncludeChords(!includeChords)}
+                disabled={isGenerating}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                  includeChords ? 'bg-emerald-600' : 'bg-slate-700'
+                } ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    includeChords ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Enhanced Prompt Display (if available) */}
+            {enhancedPrompt && (
+              <div className='p-4 bg-blue-900/20 border border-blue-700 rounded-lg'>
+                <div className='flex items-start gap-2'>
+                  <svg
+                    className='w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5'
+                    fill='none'
+                    stroke='currentColor'
+                    viewBox='0 0 24 24'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      strokeWidth={2}
+                      d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+                    />
+                  </svg>
+                  <div className='flex-1'>
+                    <p className='text-xs font-medium text-blue-300 mb-1'>
+                      AI Enhanced Prompt:
+                    </p>
+                    <p className='text-xs text-blue-200'>{enhancedPrompt}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Error Display */}
             {error && (
@@ -347,4 +433,3 @@ export default function AudioClipGeneratorModal({
     </>
   );
 }
-
