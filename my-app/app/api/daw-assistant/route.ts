@@ -67,6 +67,231 @@ const createEmptyTrackTool = new DynamicStructuredTool({
   },
 });
 
+const createAudioTrackTool = new DynamicStructuredTool({
+  name: 'create_audio_track',
+  description:
+    'Create a new audio track for audio files/loops. Use this when the user wants an audio track or when suggesting tracks that would benefit from audio samples (drums, vocals, recorded instruments, etc.).',
+  schema: z.object({
+    trackName: z
+      .string()
+      .describe(
+        'Name for the audio track (e.g., "Drums", "Vocals", "Guitar Loop")'
+      ),
+  }),
+  func: async ({ trackName }) => {
+    return JSON.stringify({
+      success: true,
+      trackName,
+      actions: [
+        {
+          type: 'create_track',
+          trackType: 'audio',
+          trackName,
+          reasoning: `Creating audio track for ${trackName}`,
+        },
+      ],
+    });
+  },
+});
+
+const suggestComprehensiveTracksTool = new DynamicStructuredTool({
+  name: 'suggest_comprehensive_tracks',
+  description:
+    'Generate a comprehensive list of 8-12 varied track suggestions for a music project. Use this when the user asks for track ideas, suggestions, or what tracks to create. This should include a good mix of MIDI tracks with different synth presets AND audio tracks.',
+  schema: z.object({
+    genre: z
+      .string()
+      .optional()
+      .describe(
+        'Music genre or style (e.g., "electronic", "hip-hop", "pop", "ambient")'
+      ),
+    includeAudio: z
+      .boolean()
+      .default(true)
+      .describe('Whether to include audio track suggestions'),
+    trackCount: z
+      .number()
+      .min(8)
+      .max(15)
+      .default(10)
+      .describe('Number of tracks to suggest (8-15, default 10)'),
+  }),
+  func: async ({ genre, includeAudio = true, trackCount = 10 }) => {
+    // Generate comprehensive track suggestions with variety
+    // Always aim for 8-12 tracks with good mix of MIDI (different synths) and audio
+    const suggestions: Array<{
+      type: 'midi' | 'audio';
+      name: string;
+      instrument?: string;
+      synthPreset?: string;
+    }> = [];
+
+    // Core rhythm section (always include)
+    suggestions.push(
+      { type: 'audio', name: 'Kick Drum' },
+      { type: 'audio', name: 'Drums' },
+      { type: 'midi', name: 'Bass', instrument: 'bass', synthPreset: 'bass' }
+    );
+
+    // Percussion variety
+    suggestions.push(
+      { type: 'midi', name: 'Hi-hat', instrument: 'hihat' },
+      { type: 'midi', name: 'Clap', instrument: 'clap' }
+    );
+
+    // Melodic elements with DIFFERENT synth presets (variety is key!)
+    suggestions.push(
+      {
+        type: 'midi',
+        name: 'Lead Synth',
+        instrument: 'lead',
+        synthPreset: 'lead',
+      },
+      { type: 'midi', name: 'Pad', instrument: 'pad', synthPreset: 'pad' },
+      {
+        type: 'midi',
+        name: 'Piano',
+        instrument: 'piano',
+        synthPreset: 'piano',
+      },
+      {
+        type: 'midi',
+        name: 'Strings',
+        instrument: 'pluck',
+        synthPreset: 'pluck',
+      },
+      { type: 'midi', name: 'Bells', instrument: 'bells', synthPreset: 'bells' }
+    );
+
+    // Additional audio tracks for variety
+    if (includeAudio) {
+      suggestions.push(
+        { type: 'audio', name: 'Vocals' },
+        { type: 'audio', name: 'FX' }
+      );
+    }
+
+    // Genre-specific additions
+    if (genre) {
+      const lowerGenre = genre.toLowerCase();
+      if (lowerGenre.includes('electronic') || lowerGenre.includes('edm')) {
+        suggestions.push(
+          {
+            type: 'midi',
+            name: 'Arp',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          },
+          {
+            type: 'midi',
+            name: 'Pluck',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          },
+          { type: 'audio', name: 'Riser' }
+        );
+      } else if (lowerGenre.includes('hip-hop') || lowerGenre.includes('rap')) {
+        suggestions.push(
+          { type: 'audio', name: 'Vocal Samples' },
+          {
+            type: 'midi',
+            name: '808',
+            instrument: 'bass',
+            synthPreset: 'bass',
+          },
+          { type: 'audio', name: 'Snare' }
+        );
+      } else if (lowerGenre.includes('pop')) {
+        suggestions.push(
+          { type: 'audio', name: 'Acoustic Guitar' },
+          {
+            type: 'midi',
+            name: 'Synth Chords',
+            instrument: 'pad',
+            synthPreset: 'pad',
+          },
+          { type: 'audio', name: 'Percussion' }
+        );
+      } else if (lowerGenre.includes('ambient')) {
+        suggestions.push(
+          {
+            type: 'midi',
+            name: 'Atmosphere',
+            instrument: 'pad',
+            synthPreset: 'pad',
+          },
+          { type: 'audio', name: 'Field Recording' },
+          {
+            type: 'midi',
+            name: 'Texture',
+            instrument: 'pluck',
+            synthPreset: 'pluck',
+          }
+        );
+      }
+    }
+
+    // Ensure we have at least trackCount suggestions, fill with more variety if needed
+    while (suggestions.length < trackCount) {
+      const additionalTracks = [
+        {
+          type: 'midi' as const,
+          name: 'Synth 2',
+          instrument: 'lead',
+          synthPreset: 'lead',
+        },
+        {
+          type: 'midi' as const,
+          name: 'Pad 2',
+          instrument: 'pad',
+          synthPreset: 'pad',
+        },
+        { type: 'audio' as const, name: 'Sample' },
+        {
+          type: 'midi' as const,
+          name: 'Pluck',
+          instrument: 'pluck',
+          synthPreset: 'pluck',
+        },
+        { type: 'audio' as const, name: 'Loop' },
+      ];
+      suggestions.push(
+        ...additionalTracks.slice(0, trackCount - suggestions.length)
+      );
+    }
+
+    // Trim to requested count (but ensure minimum variety)
+    const finalSuggestions = suggestions.slice(0, Math.max(trackCount, 8));
+
+    // Convert to actions
+    const actions: DAWAction[] = [];
+    for (const suggestion of finalSuggestions) {
+      if (suggestion.type === 'audio') {
+        actions.push({
+          type: 'create_track',
+          trackType: 'audio',
+          trackName: suggestion.name,
+          reasoning: `Suggested audio track: ${suggestion.name}`,
+        });
+      } else {
+        // MIDI track with instrument
+        const instrumentActions = generateActionsForInstrument(
+          suggestion.name,
+          suggestion.instrument || 'piano'
+        );
+        actions.push(...instrumentActions);
+      }
+    }
+
+    return JSON.stringify({
+      success: true,
+      suggestions: finalSuggestions,
+      actions,
+      message: `Here's a comprehensive track setup with ${finalSuggestions.length} tracks including a mix of MIDI synths and audio tracks!`,
+    });
+  },
+});
+
 const adjustBpmTool = new DynamicStructuredTool({
   name: 'adjust_bpm',
   description: 'Change the project tempo/BPM',
@@ -255,6 +480,8 @@ function generateActionsForInstrument(
 const tools = [
   createTrackWithInstrumentTool,
   createEmptyTrackTool,
+  createAudioTrackTool,
+  suggestComprehensiveTracksTool,
   adjustBpmTool,
   adjustVolumeTool,
   deleteTrackTool,
@@ -267,6 +494,27 @@ const tools = [
  * Detect if user message is requesting an action (vs just asking a question)
  */
 function isActionRequest(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+
+  // Exclude question/suggestion requests
+  const questionKeywords = [
+    'what',
+    'suggest',
+    'ideas',
+    'recommend',
+    'should i',
+    'what should',
+    'give me ideas',
+    'what tracks',
+    'list',
+    'show me',
+  ];
+
+  // If it's clearly a question/suggestion request, don't treat as action
+  if (questionKeywords.some((keyword) => lowerMessage.includes(keyword))) {
+    return false;
+  }
+
   const actionKeywords = [
     'create',
     'add',
@@ -288,7 +536,6 @@ function isActionRequest(message: string): boolean {
     'put',
     'place',
   ];
-  const lowerMessage = message.toLowerCase();
   return actionKeywords.some((keyword) => lowerMessage.includes(keyword));
 }
 
@@ -359,6 +606,8 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 **Available Tools (USE THESE TO PERFORM ACTIONS):**
 - create_track_with_instrument: Create a MIDI track with a specific instrument (piano, bass, lead, pad, bells, pluck, hihat, clap). USE THIS when user wants a track with a specific instrument.
 - create_empty_track: Create an empty MIDI track (when you want to ask user what instrument they want)
+- create_audio_track: Create an audio track for audio files/loops. USE THIS when user wants an audio track or for drums, vocals, recorded instruments.
+- suggest_comprehensive_tracks: Generate a comprehensive list of 8-12 varied track suggestions. USE THIS when user asks for track ideas, suggestions, or "what tracks should I create". This creates a full, varied track setup with different synth presets AND audio tracks.
 - adjust_bpm: Change the project tempo. USE THIS when user asks to change BPM or tempo.
 - adjust_volume: Adjust volume of a specific track. USE THIS when user wants to change track volume.
 - delete_track: Delete a track. USE THIS when user wants to remove a track.
@@ -381,6 +630,9 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - User: "Add a bass track" → You MUST call create_track_with_instrument with trackName="Bass", instrument="bass"
 - User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
 - User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
+- User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
 
 **Examples of INCORRECT behavior (DO NOT DO THIS):**
 - User: "Create a piano track" → ❌ WRONG: "I'll create a piano track for you" (without calling tool)
@@ -388,9 +640,21 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 
 **Guidelines:**
 - When user requests specific instruments, use create_track_with_instrument tool multiple times (once per track)
+- When user asks for track ideas, suggestions, or "what tracks should I create", ALWAYS use suggest_comprehensive_tracks tool to generate 8-12 varied tracks
+- The suggest_comprehensive_tracks tool should create a MIX of:
+  * MIDI tracks with DIFFERENT synth presets (piano, bass, lead, pad, bells, pluck) - NOT all the same!
+  * Audio tracks (drums, vocals, recorded instruments)
+  * Variety is key - don't suggest 4 similar tracks, suggest 8-12 with different instruments and types
 - For house beats, typically use: kick (bass), bass, hihat, clap, and set BPM to 120-128
 - Be conversational in your text response AFTER calling tools, but ALWAYS call tools first for action requests
 - If user doesn't specify instrument, use create_empty_track and ask them what they want
+- When suggesting tracks, always aim for comprehensive variety: different synth types, audio tracks, percussion, melodic elements
+
+**Track Suggestion Examples:**
+- User: "What tracks should I create?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Give me track ideas" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "Suggest some tracks" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
+- User: "What should I add?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)
 
 Now help the user with their request. Remember: ACTIONS REQUIRE TOOL CALLS!`;
 
