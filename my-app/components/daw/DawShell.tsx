@@ -18,9 +18,11 @@ import {
   updateMidiParts,
 } from '@/lib/audioEngine';
 import { createEmptyMidiClip, Track } from '@/lib/midiTypes';
+import { useSongSpec } from '@/lib/song-spec-context';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
 import AIAssistant from './AIAssistant';
+import DAWSetupModal from './DAWSetupModal';
 import Mixer from './Mixer';
 import SyncScrollContainer from './SyncScrollContainer';
 import Timeline from './Timeline';
@@ -41,12 +43,18 @@ const trackColors = [
 ];
 
 export default function DawShell() {
+  const { songSpec } = useSongSpec();
+
   // Right sidebar width in pixels, resizable by user
   const [rightWidth, setRightWidth] = useState(320);
   const [isResizingRight, setIsResizingRight] = useState(false);
 
   // Track type selection dialog state
   const [isTrackDialogOpen, setIsTrackDialogOpen] = useState(false);
+
+  // Setup modal state
+  const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
+  const [hasSetupBeenShown, setHasSetupBeenShown] = useState(false);
 
   // Mixer minimized state
   const [isMixerMinimized, setIsMixerMinimized] = useState(false);
@@ -65,6 +73,21 @@ export default function DawShell() {
 
   // Track data - Start with empty tracks for AI to populate
   const [tracks, setTracks] = useState<Track[]>([]);
+
+  // Check if we should show the setup modal when song spec is available
+  useEffect(() => {
+    if (
+      songSpec &&
+      !hasSetupBeenShown &&
+      tracks.length === 0 &&
+      songSpec.bpm &&
+      songSpec.key &&
+      songSpec.instruments &&
+      songSpec.instruments.length > 0
+    ) {
+      setIsSetupModalOpen(true);
+    }
+  }, [songSpec, hasSetupBeenShown, tracks.length]);
 
   // Keyboard shortcuts for transport controls
   useEffect(() => {
@@ -458,7 +481,9 @@ export default function DawShell() {
                     : t
                 )
               );
-              console.log(`✓ Renamed track "${trackToRename.name}" to "${action.newTrackName}"`);
+              console.log(
+                `✓ Renamed track "${trackToRename.name}" to "${action.newTrackName}"`
+              );
             }
             break;
 
@@ -834,6 +859,35 @@ export default function DawShell() {
         onSelectMidi={handleSelectMidi}
         onSelectAudio={handleSelectAudio}
         onClose={() => setIsTrackDialogOpen(false)}
+      />
+
+      {/* DAW Setup Modal */}
+      <DAWSetupModal
+        isOpen={isSetupModalOpen}
+        onClose={() => {
+          setIsSetupModalOpen(false);
+          setHasSetupBeenShown(true);
+        }}
+        onSetupComplete={(response) => {
+          // Execute the setup actions
+          handleAIAssistantActions(response);
+          setHasSetupBeenShown(true);
+        }}
+        dawState={{
+          tracks: tracks.map((t) => ({
+            id: t.id,
+            name: t.name,
+            type: t.type,
+            volume: t.volume,
+            muted: t.muted,
+            solo: t.solo,
+            instrumentMode: t.type === 'midi' ? t.instrumentMode : undefined,
+            synthPreset: t.type === 'midi' ? t.synthPreset : undefined,
+            samplerAudioUrl: t.samplerAudioUrl ?? undefined,
+          })),
+          bpm,
+          metronomeEnabled,
+        }}
       />
     </main>
   );

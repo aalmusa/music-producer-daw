@@ -1,24 +1,23 @@
 // app/api/context/route.ts
-import { NextResponse } from "next/server";
 import {
-  HumanMessage,
   AIMessage,
-  ToolMessage,
+  HumanMessage,
   SystemMessage,
   trimMessages,
-} from "@langchain/core/messages";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { MemorySaver } from "@langchain/langgraph";
-import { tool } from "@langchain/core/tools";
-import path from "path";
-import * as z from "zod";
+} from '@langchain/core/messages';
+import { tool } from '@langchain/core/tools';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { MemorySaver } from '@langchain/langgraph';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { NextResponse } from 'next/server';
+import path from 'path';
+import * as z from 'zod';
 
 // --- INTERNAL IMPORTS ---
-import { analyzeFromPath } from "./analyzeSongProcess";
-import { loadSongSpec, updateSongSpec, SongSpec } from "./SongSpecStore";
-import { generateProductionSpec } from "./productionSpec";
-import { addReferenceFromPath } from "./referenceManager";
+import { analyzeFromPath } from './analyzeSongProcess';
+import { generateProductionSpec } from './productionSpec';
+import { addReferenceFromPath } from './referenceManager';
+import { loadSongSpec, SongSpec, updateSongSpec } from './SongSpecStore';
 
 // Initialize Memory for conversation history
 const checkpointer = new MemorySaver();
@@ -35,7 +34,7 @@ const createUpdateSpecTool = (songId: string) =>
 
       if (input.mood) {
         updates.mood = Array.isArray(input.mood)
-          ? input.mood.join(", ")
+          ? input.mood.join(', ')
           : input.mood;
       }
 
@@ -50,7 +49,7 @@ const createUpdateSpecTool = (songId: string) =>
       return `Successfully updated SongSpec for ID ${songId}. New values saved to database.`;
     },
     {
-      name: "update_song_spec",
+      name: 'update_song_spec',
       description:
         "Call this tool to update the song's genre, mood, bpm, key, scale, instruments, or chords in the database. ONLY call this if the user explicitly asks to change something or if you have inferred a definite genre/mood from context.",
       schema: z.object({
@@ -79,12 +78,12 @@ const analyzeAudioTool = tool(
       const result = await analyzeFromPath(absPath);
       return JSON.stringify(result);
     } catch (e) {
-      return "Error analyzing audio file. File might not exist.";
+      return 'Error analyzing audio file. File might not exist.';
     }
   },
   {
-    name: "analyze_audio_reference",
-    description: "Analyze a specific audio file to get BPM, Key, and Energy.",
+    name: 'analyze_audio_reference',
+    description: 'Analyze a specific audio file to get BPM, Key, and Energy.',
     schema: z.object({
       filePath: z.string(),
     }),
@@ -95,10 +94,10 @@ const analyzeAudioTool = tool(
 const createCompleteSpecTool = () =>
   tool(
     async () => {
-      return "SongSpec marked as complete. The UI will now display the proceed button.";
+      return 'SongSpec marked as complete. The UI will now display the proceed button.';
     },
     {
-      name: "confirm_spec_completion",
+      name: 'confirm_spec_completion',
       description:
         "Call this tool IMMEDIATELY when the SongSpec is fully defined (Genre, Mood, BPM, Key, Instruments). This triggers the 'Next Step' button in the user interface.",
       schema: z.object({}),
@@ -116,39 +115,39 @@ function generateSystemPrompt(spec: SongSpec): string {
           .map((r, index) => {
             const name = r.sourcePath
               ? path.basename(r.sourcePath)
-              : "Unknown File";
+              : 'Unknown File';
             return `  ${index + 1}. "${name}" (Detected: ${r.bpm} BPM, ${
               r.key
             } ${r.scale})`;
           })
-          .join("\n")
-      : "  - None";
+          .join('\n')
+      : '  - None';
 
-  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? "unknown";
-  const key = spec.key ?? spec.aggregate?.key ?? "unknown";
-  const scale = spec.scale ?? spec.aggregate?.scale ?? "unknown";
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'unknown';
+  const key = spec.key ?? spec.aggregate?.key ?? 'unknown';
+  const scale = spec.scale ?? spec.aggregate?.scale ?? 'unknown';
 
-  const genre = spec.genre ?? "unknown";
+  const genre = spec.genre ?? 'unknown';
   const mood = Array.isArray(spec.mood)
-    ? spec.mood.join(", ")
-    : spec.mood ?? "unknown";
+    ? spec.mood.join(', ')
+    : spec.mood ?? 'unknown';
 
   const instruments =
     Array.isArray(spec.instruments) && spec.instruments.length > 0
-      ? spec.instruments.join(", ")
-      : "unknown";
+      ? spec.instruments.join(', ')
+      : 'unknown';
 
   const chords =
     spec.chordProgression && Array.isArray(spec.chordProgression.global)
-      ? spec.chordProgression.global.join(" → ")
-      : "unknown";
+      ? spec.chordProgression.global.join(' → ')
+      : 'unknown';
 
   const missingFields = [];
-  if (genre === "unknown") missingFields.push("Genre");
-  if (mood === "unknown") missingFields.push("Mood");
-  if (bpm === "unknown") missingFields.push("BPM");
-  if (key === "unknown") missingFields.push("Key");
-  if (instruments === "unknown") missingFields.push("Instruments");
+  if (genre === 'unknown') missingFields.push('Genre');
+  if (mood === 'unknown') missingFields.push('Mood');
+  if (bpm === 'unknown') missingFields.push('BPM');
+  if (key === 'unknown') missingFields.push('Key');
+  if (instruments === 'unknown') missingFields.push('Instruments');
 
   return `
 You are an expert AI Executive Music Producer. Your goal is to guide the user through creating a complete 'SongSpec' so we can start development.
@@ -196,6 +195,23 @@ ${referenceList}
 `;
 }
 
+// --- GET ROUTE ---
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const songId = searchParams.get('songId') || 'default';
+
+    const spec = await loadSongSpec(songId);
+    return NextResponse.json({ songSpec: spec });
+  } catch (error) {
+    console.error('Error loading song spec:', error);
+    return NextResponse.json(
+      { error: 'Failed to load song spec' },
+      { status: 500 }
+    );
+  }
+}
+
 // --- MAIN ROUTE ---
 
 export async function POST(req: Request) {
@@ -203,14 +219,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       prompt,
-      songId = "default",
+      songId = 'default',
       referenceFilePath,
       referenceFilePaths,
     } = body;
 
     if (!prompt) {
       return NextResponse.json(
-        { error: "prompt is required" },
+        { error: 'prompt is required' },
         { status: 400 }
       );
     }
@@ -249,14 +265,14 @@ export async function POST(req: Request) {
           // Reload local spec to ensure it has the production updates
           spec = await loadSongSpec(songId);
         } catch (err) {
-          console.error("Auto-production generation failed:", err);
+          console.error('Auto-production generation failed:', err);
         }
       }
     }
 
     // 2. SETUP AGENT
     const model = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
+      model: 'gemini-2.5-flash',
       apiKey: process.env.GOOGLE_API_KEY,
       temperature: 0.7,
     });
@@ -274,10 +290,10 @@ export async function POST(req: Request) {
       const systemPrompt = generateSystemPrompt(spec);
 
       const trimmed = await trimMessages(state.messages, {
-        strategy: "last",
+        strategy: 'last',
         maxTokens: 384,
-        startOn: "human",
-        endOn: ["human", "tool"],
+        startOn: 'human',
+        endOn: ['human', 'tool'],
         tokenCounter: (msgs) => msgs.length,
         includeSystem: false,
       });
@@ -311,7 +327,7 @@ export async function POST(req: Request) {
         msg.tool_calls.length > 0
       ) {
         const hasCompletionCall = msg.tool_calls.some(
-          (tc) => tc.name === "confirm_spec_completion"
+          (tc) => tc.name === 'confirm_spec_completion'
         );
         if (hasCompletionCall) {
           canProceed = true;
@@ -334,9 +350,9 @@ export async function POST(req: Request) {
       { status: 200 }
     );
   } catch (error: any) {
-    console.error("Error in POST /api/context:", error);
+    console.error('Error in POST /api/context:', error);
     return NextResponse.json(
-      { error: error?.message ?? "Internal Server Error" },
+      { error: error?.message ?? 'Internal Server Error' },
       { status: 500 }
     );
   }
