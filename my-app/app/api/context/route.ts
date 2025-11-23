@@ -1,18 +1,18 @@
 // app/api/context/route.ts
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { NextResponse } from 'next/server';
-import path from 'path';
-import * as z from 'zod';
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { NextResponse } from "next/server";
+import path from "path";
+import * as z from "zod";
 
-import { tool } from 'langchain';
-import { analyzeFromPath } from './analyzeSongProcess';
-import { generateProductionSpec } from './productionSpec';
-import { addReferenceFromPath } from './referenceManager';
-import { loadSongSpec, SongSpec, updateSongSpec } from './SongSpecStore';
+import { tool } from "langchain";
+import { analyzeFromPath } from "./analyzeSongProcess";
+import { generateProductionSpec } from "./productionSpec";
+import { addReferenceFromPath } from "./referenceManager";
+import { loadSongSpec, SongSpec, updateSongSpec } from "./SongSpecStore";
 
 const conversationModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash',
+  model: "gemini-2.5-flash",
   apiKey: process.env.GOOGLE_API_KEY,
   temperature: 0.8,
 });
@@ -24,19 +24,19 @@ export const getReferenceSongContext = tool(
       ? filePath
       : path.join(process.cwd(), filePath);
 
-    // Only returns audio analysis (bpm, key, energy segments)
+    // Returns low-level audio analysis and (optionally) genre predictions
     const result = await analyzeFromPath(absPath);
     return result;
   },
   {
-    name: 'song_analysis',
+    name: "song_analysis",
     description:
-      'Analyze a reference audio file and return audio analysis (bpm, key, energySegments). Genre is left null and should be inferred by the assistant. Input is the path to the audio file.',
+      "Analyze a reference audio file and return audio analysis (bpm, key, energySegments). Genre is left null and should be inferred by the assistant. Input is the path to the audio file.",
     schema: z.object({
       filePath: z
         .string()
         .describe(
-          'Absolute or project relative path to the reference audio file'
+          "Absolute or project relative path to the reference audio file"
         ),
     }),
   }
@@ -45,25 +45,25 @@ export const getReferenceSongContext = tool(
 // Helper to give the model a readable summary of the current spec
 function summarizeSpecForPrompt(spec: SongSpec): string {
   const refCount = spec.references?.length ?? 0;
-  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? 'unknown';
-  const key = spec.key ?? spec.aggregate?.key ?? 'unknown';
-  const scale = spec.scale ?? spec.aggregate?.scale ?? 'unknown';
+  const bpm = spec.bpm ?? spec.aggregate?.bpm ?? "unknown";
+  const key = spec.key ?? spec.aggregate?.key ?? "unknown";
+  const scale = spec.scale ?? spec.aggregate?.scale ?? "unknown";
 
-  const genre = spec.genre ?? 'none yet';
+  const genre = spec.genre ?? "none yet";
 
   const mood = Array.isArray(spec.mood)
-    ? spec.mood.join(', ')
-    : spec.mood ?? 'none yet';
+    ? spec.mood.join(", ")
+    : spec.mood ?? "none yet";
 
   const instruments =
     Array.isArray(spec.instruments) && spec.instruments.length > 0
-      ? spec.instruments.join(', ')
-      : 'none yet';
+      ? spec.instruments.join(", ")
+      : "none yet";
 
   const chords =
     spec.chordProgression && Array.isArray(spec.chordProgression.global)
-      ? spec.chordProgression.global.join(' → ')
-      : 'none yet';
+      ? spec.chordProgression.global.join(" → ")
+      : "none yet";
 
   return `
 Current song summary:
@@ -81,18 +81,18 @@ Current song summary:
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const songId = searchParams.get('songId') || 'default';
+    const songId = searchParams.get("songId") || "default";
 
     // Load the current spec
     const spec = await loadSongSpec(songId);
 
     return NextResponse.json(spec, { status: 200 });
   } catch (error: any) {
-    console.error('Error in GET /api/context:', error);
+    console.error("Error in GET /api/context:", error);
 
     return NextResponse.json(
       {
-        error: error?.message ?? 'Internal Server Error',
+        error: error?.message ?? "Internal Server Error",
       },
       { status: 500 }
     );
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       prompt,
-      songId = 'default',
+      songId = "default",
       referenceFilePath,
       referenceFilePaths,
     } = body as {
@@ -114,9 +114,9 @@ export async function POST(req: Request) {
       referenceFilePaths?: string[];
     };
 
-    if (!prompt || typeof prompt !== 'string') {
+    if (!prompt || typeof prompt !== "string") {
       return NextResponse.json(
-        { error: 'prompt is required' },
+        { error: "prompt is required" },
         { status: 400 }
       );
     }
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
       }
 
       spec = await updateSongSpec(updates, songId);
-      console.log('Generated production spec:', updates);
+      console.log("Generated production spec:", updates);
     }
 
     // 4. Construct system prompt with strong grounding rules
@@ -177,7 +177,7 @@ IMPORTANT RULES (GROUNDING):
 
 1. Ground truth from SongSpec:
    - Whenever you mention the current BPM, key, scale, instruments, chord progression,
-     references, or aggregate values, you MUST read them from the Current SongSpec JSON below.
+     references, or aggregate values, you MUST read them from the SongSpec JSON provided below.
    - If a field is missing in the SongSpec, you must say that it is missing. Do not guess numeric values,
      instruments, or chords.
 
@@ -208,13 +208,14 @@ IMPORTANT RULES (GROUNDING):
 FORMATTING RULES (VERY IMPORTANT):
 
 - Your natural language reply should be concise and should NOT dump the full SongSpec JSON.
-- Do NOT include any \`references\` or \`aggregate\` fields in the JSON you output.
-- At the very end of your reply, output a small JSON block labelled \`SongSpec\` with ONLY the fields that changed
+- Do NOT include any "references" or "aggregate" fields in the JSON you output.
+- At the very end of your reply, output a small JSON block labelled "SongSpec" with ONLY the fields that changed
   or that you are explicitly setting. Allowed keys in this JSON are:
-  \`genre\`, \`mood\`, \`bpm\`, \`key\`, \`scale\`, \`instruments\`, \`chordProgression\`.
+  "genre", "mood", "bpm", "key", "scale", "instruments", "chordProgression".
 - The JSON block MUST be valid JSON and must not contain comments or trailing commas.
 
-
+/* Below is the full current SongSpec JSON. Read from this, but do not print it back in full. */
+${JSON.stringify(spec, null, 2)}
 `;
 
     const messages = [
@@ -225,16 +226,16 @@ FORMATTING RULES (VERY IMPORTANT):
     const res = await conversationModel.invoke(messages);
 
     const replyText =
-      typeof res.content === 'string'
+      typeof res.content === "string"
         ? res.content
         : Array.isArray(res.content)
-        ? res.content.map((c: any) => c.text ?? '').join('')
+        ? res.content.map((c: any) => c.text ?? "").join("")
         : String(res.content);
 
     // 5. Try to parse SongSpec JSON from reply
     try {
-      const firstBrace = replyText.indexOf('{');
-      const lastBrace = replyText.lastIndexOf('}');
+      const firstBrace = replyText.indexOf("{");
+      const lastBrace = replyText.lastIndexOf("}");
 
       if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         const jsonString = replyText.slice(firstBrace, lastBrace + 1);
@@ -246,14 +247,14 @@ FORMATTING RULES (VERY IMPORTANT):
         if (
           parsedSpec.genre !== undefined &&
           parsedSpec.genre !== null &&
-          parsedSpec.genre !== ''
+          parsedSpec.genre !== ""
         ) {
           updates.genre = parsedSpec.genre;
         }
         if (
           parsedSpec.mood !== undefined &&
           parsedSpec.mood !== null &&
-          parsedSpec.mood !== ''
+          parsedSpec.mood !== ""
         ) {
           updates.mood = parsedSpec.mood;
         }
@@ -262,7 +263,7 @@ FORMATTING RULES (VERY IMPORTANT):
         if (
           parsedSpec.bpm !== undefined &&
           parsedSpec.bpm !== null &&
-          typeof parsedSpec.bpm === 'number' &&
+          typeof parsedSpec.bpm === "number" &&
           parsedSpec.bpm > 0
         ) {
           updates.bpm = parsedSpec.bpm;
@@ -270,14 +271,14 @@ FORMATTING RULES (VERY IMPORTANT):
         if (
           parsedSpec.key !== undefined &&
           parsedSpec.key !== null &&
-          parsedSpec.key !== ''
+          parsedSpec.key !== ""
         ) {
           updates.key = parsedSpec.key;
         }
         if (
           parsedSpec.scale !== undefined &&
           parsedSpec.scale !== null &&
-          parsedSpec.scale !== ''
+          parsedSpec.scale !== ""
         ) {
           updates.scale = parsedSpec.scale;
         }
@@ -292,20 +293,20 @@ FORMATTING RULES (VERY IMPORTANT):
 
         if (Object.keys(updates).length > 0) {
           spec = await updateSongSpec(updates, songId);
-          console.log('Updated spec from LLM response:', updates);
+          console.log("Updated spec from LLM response:", updates);
         } else {
           console.log(
-            'LLM response contained SongSpec JSON but no valid updates to save'
+            "LLM response contained SongSpec JSON but no valid updates to save"
           );
         }
       } else {
         console.log(
-          'No JSON block found in LLM response. This is fine if it is only conversational'
+          "No JSON block found in LLM response. This is fine if it is only conversational"
         );
       }
     } catch (parseError) {
       console.log(
-        'Could not parse SongSpec from LLM response. This is fine.',
+        "Could not parse SongSpec from LLM response. This is fine.",
         parseError
       );
     }
@@ -319,11 +320,11 @@ FORMATTING RULES (VERY IMPORTANT):
       { status: 200 }
     );
   } catch (error: any) {
-    console.error('Error in POST /api/context:', error);
+    console.error("Error in POST /api/context:", error);
 
     return NextResponse.json(
       {
-        error: error?.message ?? 'Internal Server Error',
+        error: error?.message ?? "Internal Server Error",
       },
       { status: 500 }
     );

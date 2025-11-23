@@ -17,16 +17,93 @@ function makeRefId() {
   return `ref-${refCounter}`;
 }
 
-// For now, we do not get structured genres or moods from the DSP layer.
-// The agent will infer genre and mood from the references and conversation.
-// Stub kept so you can plug in a classifier later if you want.
-function extractGenresAndMoods(_rawGenreResult: any): {
+/**
+ * Try to pull structured genres and moods out of whatever
+ * the DSP / classifier returns as `rawGenreResult`.
+ *
+ * Supported shapes (best effort):
+ * - { genres: string[], moods: string[] }
+ * - { genre: string | string[], mood: string | string[] }
+ * - string[] (treated as genres)
+ * - [{ label: string, score?: number }, ...] (take top labels as genres)
+ */
+function extractGenresAndMoods(rawGenreResult: any): {
   genres: string[];
   moods: string[];
 } {
+  if (!rawGenreResult) {
+    return { genres: [], moods: [] };
+  }
+
+  let genres: string[] = [];
+  let moods: string[] = [];
+
+  // 1) If it's already an object with genres/moods fields
+  if (typeof rawGenreResult === "object" && !Array.isArray(rawGenreResult)) {
+    const obj = rawGenreResult as any;
+
+    // Explicit arrays
+    if (Array.isArray(obj.genres)) {
+      genres = obj.genres.filter((g: any) => typeof g === "string");
+    }
+    if (Array.isArray(obj.moods)) {
+      moods = obj.moods.filter((m: any) => typeof m === "string");
+    }
+
+    // Single or array genre/mood fields
+    if (obj.genre) {
+      if (Array.isArray(obj.genre)) {
+        genres = genres.concat(
+          obj.genre.filter((g: any) => typeof g === "string")
+        );
+      } else if (typeof obj.genre === "string") {
+        genres.push(obj.genre);
+      }
+    }
+
+    if (obj.mood) {
+      if (Array.isArray(obj.mood)) {
+        moods = moods.concat(
+          obj.mood.filter((m: any) => typeof m === "string")
+        );
+      } else if (typeof obj.mood === "string") {
+        moods.push(obj.mood);
+      }
+    }
+  }
+
+  // 2) If it's an array, decide what to do
+  if (Array.isArray(rawGenreResult)) {
+    // Array of strings → treat as genres
+    if (rawGenreResult.every((x) => typeof x === "string")) {
+      genres = genres.concat(rawGenreResult as string[]);
+    }
+
+    // Array of label objects → take top labels as genres
+    if (
+      rawGenreResult.every(
+        (x) => x && typeof x === "object" && typeof x.label === "string"
+      )
+    ) {
+      const labelObjs = rawGenreResult as Array<{
+        label: string;
+        score?: number;
+      }>;
+      const sorted = [...labelObjs].sort(
+        (a, b) => (b.score ?? 0) - (a.score ?? 0)
+      );
+      const topLabels = sorted.map((x) => x.label);
+      genres = genres.concat(topLabels);
+    }
+  }
+
+  // Dedup and trim length so things do not explode
+  const uniqueGenres = Array.from(new Set(genres)).slice(0, 6);
+  const uniqueMoods = Array.from(new Set(moods)).slice(0, 6);
+
   return {
-    genres: [],
-    moods: [],
+    genres: uniqueGenres,
+    moods: uniqueMoods,
   };
 }
 
@@ -88,7 +165,7 @@ export async function addReferenceFromPath(
     ? filePath
     : path.join(process.cwd(), filePath);
 
-  // analyzeFromPath now returns { genre: null, analysis }
+  // analyzeFromPath should now return { genre: rawGenreResult, analysis }
   const { genre: rawGenreResult, analysis } = await analyzeFromPath(absPath);
   const { genres, moods } = extractGenresAndMoods(rawGenreResult);
 
@@ -112,9 +189,6 @@ export async function addReferenceFromPath(
     references: newReferences,
     aggregate,
     // Let aggregate drive bpm/key/scale when references exist.
-    // If the user explicitly overrides these later in chat,
-    // route.ts will write those values, and they will be used
-    // until the next time a reference analysis is added.
     bpm: aggregate ? aggregate.bpm : spec.bpm,
     key: aggregate ? aggregate.key : spec.key,
     scale: aggregate ? aggregate.scale : spec.scale,

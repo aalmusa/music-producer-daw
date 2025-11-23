@@ -6,6 +6,17 @@ import wav from "node-wav";
 import { EssentiaWASM } from "essentia.js/dist/essentia-wasm.es";
 import EssentiaExtractor from "essentia.js/dist/essentia.js-extractor.es";
 
+import * as tf from "@tensorflow/tfjs";
+import {
+  TensorflowMusiCNN,
+  EssentiaTFInputExtractor,
+} from "essentia.js/dist/essentia.js-model.es";
+
+// If you deploy, set MUSICNN_MODEL_URL in env to your real domain.
+// Locally this will hit the Next dev server on :3000 if you serve the model from /public/models.
+const MUSICNN_MODEL_URL =
+  process.env.MUSICNN_MODEL_URL || "http://localhost:3001/models/model.json";
+
 // Save uploaded file and convert it to wav, return final path
 export const writeToDrive = async (file: File): Promise<string> => {
   const name = file.name;
@@ -42,7 +53,7 @@ export const writeToDrive = async (file: File): Promise<string> => {
 Tempo: BeatTrackerDegara → bpm
 Key,Scale: KeyExtractor → key + scale
 Energy: BeatsLoudness → energy segments
-Genre / mood: handled by the LLM for now (no MusiCNN in Node)
+Genre / mood: MusiCNN model output, interpreted by the LLM
 */
 
 type EnergyBand = "low" | "medium" | "high";
@@ -143,7 +154,6 @@ const analyzeSong = async (filePath: string) => {
     };
   } catch (err: any) {
     console.error("KeyExtractor error:", err);
-    // Fallback so we do not crash the whole request
     keyAndScale = { key: "C", scale: "major", strength: 0 };
   }
 
@@ -211,7 +221,6 @@ const analyzeSong = async (filePath: string) => {
     energySegments = groupedRange;
   } catch (err: any) {
     console.error("BeatsLoudness error:", err);
-    // Leave energySegments as empty array
     energySegments = [];
   }
 
@@ -224,13 +233,65 @@ const analyzeSong = async (filePath: string) => {
   };
 };
 
-// High-level MusiCNN genre model is disabled for now.
-// We only return low-level analysis and let the LLM infer genre / mood.
-export const analyzeFromPath = async (filePath: string) => {
-  const analysisResult = await analyzeSong(filePath);
+// MusiCNN genre model
+const genreIdentifier = async (filePath: string) => {
+  try {
+    const wavBuffer = await fs.readFile(filePath);
+    const decoded = wav.decode(wavBuffer);
+    const channelData = decoded.channelData;
 
+    const monoAudioData =
+      channelData.length === 1
+        ? channelData[0]
+        : Float32Array.from(
+            { length: channelData[0].length },
+            (_, i) =>
+              channelData.reduce((sum, channel) => sum + channel[i], 0) /
+              channelData.length
+          );
+
+    // Use the WASM module for TF extractor
+    let wasmModuleForTF: any = EssentiaWASM;
+    if (
+      EssentiaWASM &&
+      typeof EssentiaWASM === "object" &&
+      "default" in EssentiaWASM
+    ) {
+      wasmModuleForTF = (EssentiaWASM as any).default;
+    }
+
+    const tfExtractor = new EssentiaTFInputExtractor(
+      wasmModuleForTF,
+      "musicnn"
+    );
+
+    // Docs expect raw mono Float32Array
+    const features = tfExtractor.computeFrameWise(monoAudioData);
+
+    // Load TFJS model from HTTP URL
+    const modelCNN = new TensorflowMusiCNN(tf, MUSICNN_MODEL_URL);
+    await modelCNN.initialize();
+
+    // zeroPadding = true
+    const prediction = await modelCNN.predict(features as any, true);
+
+    return prediction;
+  } catch (err) {
+    console.error("Genre model error:", err);
+    return null;
+  }
+};
+
+// Combined interface used by the rest of the app
+export const analyzeFromPath = async (filePath: string) => {
+  const [genreResult, analysisResult] = await Promise.all([
+    genreIdentifier(filePath),
+    analyzeSong(filePath),
+  ]);
+
+  console.log(genreResult, "hiii");
   return {
-    genre: null, // placeholder, not used while MusiCNN is off
+    genre: genreResult,
     analysis: analysisResult,
   };
 };
