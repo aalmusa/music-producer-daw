@@ -40,7 +40,7 @@ export default function Mixer({
 
       {!isMinimized && (
         <div className='flex-1 overflow-x-auto overflow-y-hidden'>
-          <div className='flex gap-4 px-4 py-2 min-w-min'>
+          <div className='flex gap-4 px-4 py-3 pb-4 min-w-min'>
             {/* Master fader - now first on the left */}
             <ChannelStrip
               name='Master Volume'

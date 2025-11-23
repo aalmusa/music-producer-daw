@@ -711,7 +711,7 @@ export default function Timeline({
                                 d='M13 10V3L4 14h7v7l9-11h-7z'
                               />
                             </svg>
-                            <span className='text-[9px] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity'>
+                            <span className='text-[10px] font-medium'>
                               Generate
                             </span>
                           </button>
@@ -747,7 +747,7 @@ export default function Timeline({
                                       d='M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z'
                                     />
                                   </svg>
-                                  <span className='text-[9px] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity'>
+                                  <span className='text-[10px] font-medium'>
                                     Copy
                                   </span>
                                 </button>
@@ -865,14 +865,23 @@ export default function Timeline({
                           {/* Copy button with dropdown - only show if clips exist */}
                           {hasExistingClips && (
                             <>
-                              <div className='w-px h-8 bg-slate-700/50' />
-                              <div className='relative group/copy'>
+                              <div className='w-px h-6 bg-slate-700/50' />
+                              <div className='relative'>
                                 <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Toggle dropdown visibility
+                                    const dropdown = e.currentTarget
+                                      .nextElementSibling as HTMLElement;
+                                    if (dropdown) {
+                                      dropdown.classList.toggle('hidden');
+                                    }
+                                  }}
                                   className='flex flex-col items-center text-slate-600 hover:text-emerald-400 transition-colors px-2'
                                   title='Copy existing MIDI clip'
                                 >
                                   <svg
-                                    className='w-5 h-5 opacity-50 group-hover/copy:opacity-100 transition-opacity'
+                                    className='w-5 h-5 opacity-50 group-hover:opacity-100 transition-opacity'
                                     fill='none'
                                     stroke='currentColor'
                                     viewBox='0 0 24 24'
@@ -889,27 +898,43 @@ export default function Timeline({
                                   </span>
                                 </button>
 
-                                {/* Dropdown for selecting which clip to copy */}
-                                <div className='absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded shadow-xl py-1 min-w-[140px] opacity-0 group-hover/copy:opacity-100 pointer-events-none group-hover/copy:pointer-events-auto transition-opacity z-50'>
-                                  <div className='text-xs text-slate-400 px-3 py-1 font-medium'>
-                                    Copy from:
+                                {/* Dropdown menu for selecting which clip to copy */}
+                                <div className='hidden absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[200px]'>
+                                  <div className='p-2'>
+                                    <div className='text-[10px] text-slate-400 px-2 py-1 font-medium'>
+                                      Select clip to copy:
+                                    </div>
+                                    {track.midiClips?.map((clip) => (
+                                      <button
+                                        key={clip.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCopyMidiClip(
+                                            track.id,
+                                            clip.id,
+                                            startBar
+                                          );
+                                          // Hide dropdown
+                                          const dropdown =
+                                            e.currentTarget.closest(
+                                              '.absolute'
+                                            ) as HTMLElement;
+                                          if (dropdown) {
+                                            dropdown.classList.add('hidden');
+                                          }
+                                        }}
+                                        className='w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-300 rounded transition-colors'
+                                      >
+                                        <div className='font-medium'>
+                                          MIDI Clip
+                                        </div>
+                                        <div className='text-[10px] text-slate-500'>
+                                          Bar {clip.startBar + 1}-
+                                          {clip.startBar + clip.bars}
+                                        </div>
+                                      </button>
+                                    ))}
                                   </div>
-                                  {track.midiClips?.map((clip) => (
-                                    <button
-                                      key={clip.id}
-                                      onClick={() =>
-                                        handleCopyMidiClip(
-                                          track.id,
-                                          clip.id,
-                                          startBar
-                                        )
-                                      }
-                                      className='w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors'
-                                    >
-                                      Bar {clip.startBar + 1}-
-                                      {clip.startBar + clip.bars}
-                                    </button>
-                                  ))}
                                 </div>
                               </div>
                             </>
@@ -983,7 +1008,7 @@ export default function Timeline({
               solo: t.solo,
               instrumentMode: t.instrumentMode,
               synthPreset: t.synthPreset,
-              samplerAudioUrl: t.samplerAudioUrl,
+              samplerAudioUrl: t.samplerAudioUrl == null ? undefined : t.samplerAudioUrl,
             })),
             bpm,
             metronomeEnabled,

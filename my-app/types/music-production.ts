@@ -60,6 +60,7 @@ export interface DAWAction {
   type: 
     | 'create_track'
     | 'delete_track'
+    | 'rename_track'
     | 'adjust_volume'
     | 'adjust_bpm'
     | 'select_instrument'
@@ -75,6 +76,7 @@ export interface DAWAction {
   trackIds?: string[]; // For multiple track operations
   trackType?: 'audio' | 'midi';
   trackName?: string;
+  newTrackName?: string; // For rename_track action
   trackPattern?: string; // For pattern matching (e.g., "drum", "bass")
   instrumentPath?: string;
   instrumentMode?: 'synth' | 'sampler'; // For set_instrument_mode
