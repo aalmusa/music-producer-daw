@@ -17,15 +17,44 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0.3, // Lower temperature for more consistent tool usage
 });
 
+/**
+ * Normalizes track names to professional, standard names
+ * Only cleans up unnecessary words, but preserves user intent
+ */
+function normalizeTrackName(trackName: string, useDefaults: boolean = true): string {
+  const name = trackName.trim();
+  
+  // If name is already specific and custom, just clean it up minimally
+  if (!useDefaults) {
+    // Just ensure proper capitalization
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  
+  // Remove common suffixes/prefixes that are redundant
+  let cleanedName = name
+    .replace(/\s+(track|channel)\s*$/i, '') // Remove redundant "track" or "channel"
+    .replace(/^(the|a|an)\s+/i, '') // Remove articles
+    .trim();
+  
+  // Ensure proper capitalization
+  if (cleanedName) {
+    cleanedName = cleanedName.charAt(0).toUpperCase() + cleanedName.slice(1);
+  } else {
+    cleanedName = name; // Fallback to original if cleaning removed everything
+  }
+  
+  return cleanedName;
+}
+
 // Define tools for the DAW assistant
 const createTrackWithInstrumentTool = new DynamicStructuredTool({
   name: 'create_track_with_instrument',
   description:
-    'Create a new MIDI track and configure it with a specific instrument. Use this when the user wants a track with a specific instrument like piano, bass, hi-hat, etc.',
+    'Create a new MIDI track and configure it with a specific instrument. Use this when the user wants a track with a specific instrument like piano, bass, hi-hat, etc. Respect custom names if user specifies them (e.g., "Dark Piano", "Sub Bass", "Riff 1"), otherwise use clean defaults like "Piano", "Bass", "Guitar".',
   schema: z.object({
     trackName: z
       .string()
-      .describe('Name for the track (e.g., "Piano", "Bass", "Hi-hat")'),
+      .describe('Track name - use clean defaults like "Piano", "Bass", "Guitar", OR use the custom name if user specifies one (e.g., "Dark Piano", "Bass 1", "Lead Synth"). Avoid redundant words like "Track" or "Channel".'),
     instrument: z
       .enum(['piano', 'bass', 'lead', 'pad', 'bells', 'pluck', 'hihat', 'clap'])
       .describe(
@@ -33,13 +62,16 @@ const createTrackWithInstrumentTool = new DynamicStructuredTool({
       ),
   }),
   func: async ({ trackName, instrument }) => {
+    // Clean up the track name (just remove redundant words, preserve user intent)
+    const normalizedName = normalizeTrackName(trackName);
+    
     // This is a placeholder - the actual execution happens in the frontend
     // We return metadata that will be converted to actions
     return JSON.stringify({
       success: true,
-      trackName,
+      trackName: normalizedName,
       instrument,
-      actions: generateActionsForInstrument(trackName, instrument),
+      actions: generateActionsForInstrument(normalizedName, instrument),
     });
   },
 });
@@ -52,14 +84,15 @@ const createEmptyTrackTool = new DynamicStructuredTool({
     trackName: z.string().describe('Name for the track'),
   }),
   func: async ({ trackName }) => {
+    const normalizedName = normalizeTrackName(trackName);
     return JSON.stringify({
       success: true,
-      trackName,
+      trackName: normalizedName,
       actions: [
         {
           type: 'create_track',
           trackType: 'midi',
-          trackName,
+          trackName: normalizedName,
           reasoning: 'Creating empty MIDI track for user to configure',
         },
       ],
@@ -70,24 +103,25 @@ const createEmptyTrackTool = new DynamicStructuredTool({
 const createAudioTrackTool = new DynamicStructuredTool({
   name: 'create_audio_track',
   description:
-    'Create a new audio track for audio files/loops. Use this when the user wants an audio track or when suggesting tracks that would benefit from audio samples (drums, vocals, recorded instruments, etc.).',
+    'Create a new audio track for audio files/loops. Use this when the user wants an audio track or when suggesting tracks that would benefit from audio samples (drums, vocals, recorded instruments, etc.). Respect custom names if user specifies them, otherwise use clean defaults.',
   schema: z.object({
     trackName: z
       .string()
       .describe(
-        'Name for the audio track (e.g., "Drums", "Vocals", "Guitar Loop")'
+        'Track name - use clean defaults like "Drums", "Vocals", "Guitar", "Percussion", "FX", OR use the custom name if user specifies one. Avoid redundant words like "Track".'
       ),
   }),
   func: async ({ trackName }) => {
+    const normalizedName = normalizeTrackName(trackName);
     return JSON.stringify({
       success: true,
-      trackName,
+      trackName: normalizedName,
       actions: [
         {
           type: 'create_track',
           trackType: 'audio',
-          trackName,
-          reasoning: `Creating audio track for ${trackName}`,
+          trackName: normalizedName,
+          reasoning: `Creating audio track for ${normalizedName}`,
         },
       ],
     });
@@ -128,7 +162,7 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
 
     // Core rhythm section (always include)
     suggestions.push(
-      { type: 'audio', name: 'Kick Drum' },
+      { type: 'audio', name: 'Kick' },
       { type: 'audio', name: 'Drums' },
       { type: 'midi', name: 'Bass', instrument: 'bass', synthPreset: 'bass' }
     );
@@ -143,7 +177,7 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
     suggestions.push(
       {
         type: 'midi',
-        name: 'Lead Synth',
+        name: 'Guitar',
         instrument: 'lead',
         synthPreset: 'lead',
       },
@@ -192,10 +226,10 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
         );
       } else if (lowerGenre.includes('hip-hop') || lowerGenre.includes('rap')) {
         suggestions.push(
-          { type: 'audio', name: 'Vocal Samples' },
+          { type: 'audio', name: 'Vocals' },
           {
             type: 'midi',
-            name: '808',
+            name: 'Bass',
             instrument: 'bass',
             synthPreset: 'bass',
           },
@@ -203,10 +237,10 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
         );
       } else if (lowerGenre.includes('pop')) {
         suggestions.push(
-          { type: 'audio', name: 'Acoustic Guitar' },
+          { type: 'audio', name: 'Guitar' },
           {
             type: 'midi',
-            name: 'Synth Chords',
+            name: 'Pad',
             instrument: 'pad',
             synthPreset: 'pad',
           },
@@ -216,14 +250,14 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
         suggestions.push(
           {
             type: 'midi',
-            name: 'Atmosphere',
+            name: 'Pad',
             instrument: 'pad',
             synthPreset: 'pad',
           },
-          { type: 'audio', name: 'Field Recording' },
+          { type: 'audio', name: 'Ambient' },
           {
             type: 'midi',
-            name: 'Texture',
+            name: 'Strings',
             instrument: 'pluck',
             synthPreset: 'pluck',
           }
@@ -236,20 +270,20 @@ const suggestComprehensiveTracksTool = new DynamicStructuredTool({
       const additionalTracks = [
         {
           type: 'midi' as const,
-          name: 'Synth 2',
+          name: 'Guitar',
           instrument: 'lead',
           synthPreset: 'lead',
         },
         {
           type: 'midi' as const,
-          name: 'Pad 2',
+          name: 'Pad',
           instrument: 'pad',
           synthPreset: 'pad',
         },
-        { type: 'audio' as const, name: 'Sample' },
+        { type: 'audio' as const, name: 'FX' },
         {
           type: 'midi' as const,
-          name: 'Pluck',
+          name: 'Strings',
           instrument: 'pluck',
           synthPreset: 'pluck',
         },
@@ -354,6 +388,29 @@ const deleteTrackTool = new DynamicStructuredTool({
           type: 'delete_track',
           trackName,
           reasoning: `Deleting track ${trackName}`,
+        },
+      ],
+    });
+  },
+});
+
+const renameTrackTool = new DynamicStructuredTool({
+  name: 'rename_track',
+  description: 'Rename an existing track. Use this when the user wants to change a track\'s name.',
+  schema: z.object({
+    trackName: z.string().describe('Current name of the track to rename'),
+    newTrackName: z.string().describe('New name for the track'),
+  }),
+  func: async ({ trackName, newTrackName }) => {
+    const normalizedNewName = normalizeTrackName(newTrackName);
+    return JSON.stringify({
+      success: true,
+      actions: [
+        {
+          type: 'rename_track',
+          trackName,
+          newTrackName: normalizedNewName,
+          reasoning: `Renaming track "${trackName}" to "${normalizedNewName}"`,
         },
       ],
     });
@@ -485,6 +542,7 @@ const tools = [
   adjustBpmTool,
   adjustVolumeTool,
   deleteTrackTool,
+  renameTrackTool,
   muteTracksTool,
   unmuteTracksTool,
   toggleMetronomeTool,
@@ -611,32 +669,53 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - adjust_bpm: Change the project tempo. USE THIS when user asks to change BPM or tempo.
 - adjust_volume: Adjust volume of a specific track. USE THIS when user wants to change track volume.
 - delete_track: Delete a track. USE THIS when user wants to remove a track.
+- rename_track: Rename an existing track. USE THIS when user wants to change a track's name (e.g., "rename Piano to Dark Piano"). Can be called MULTIPLE times in one response to rename multiple tracks. When user asks to rename tracks but doesn't specify new names, suggest descriptive names based on the track's instrument/purpose.
 - mute_tracks: Mute tracks by pattern. USE THIS when user wants to mute tracks.
 - unmute_tracks: Unmute tracks by pattern. USE THIS when user wants to unmute tracks.
 - toggle_metronome: Turn metronome on/off. USE THIS when user wants to enable/disable metronome.
 
-**Instrument Mapping:**
+**Instrument Mapping & Track Naming:**
 - Piano, Keyboard → instrument: "piano"
-- Bass, Sub Bass, Kick Drum → instrument: "bass"
-- Guitar (lead), Lead → instrument: "lead"
-- Pad, Atmosphere → instrument: "pad"
+- Bass, Sub Bass, 808 → instrument: "bass"
+- Guitar, Lead Guitar → instrument: "lead"
+- Pad, Atmosphere, Synth Pad → instrument: "pad"
 - Bells, Chimes → instrument: "bells"
-- Strings, Pluck → instrument: "pluck"
-- Hi-hat → instrument: "hihat"
-- Clap → instrument: "clap"
+- Strings, Pluck, Arp → instrument: "pluck"
+- Hi-hat, Hi Hat, Hihat → instrument: "hihat"
+- Clap, Claps → instrument: "clap"
+
+**Track Naming Guidelines:**
+- DEFAULT: Use clean names like "Piano", "Bass", "Guitar", "Drums", "Vocals", "Pad" etc.
+- USER PREFERENCE: If user specifies a custom name, USE IT! Examples:
+  * User: "Create a piano track called Evening Keys" → trackName: "Evening Keys"
+  * User: "Add a bass named Sub Bass" → trackName: "Sub Bass"
+  * User: "Create a lead guitar called Riff 1" → trackName: "Riff 1"
+- FLEXIBILITY: Respect the user's naming choice. They might want:
+  * Numbered variations: "Bass 1", "Bass 2"
+  * Descriptive names: "Dark Piano", "Aggressive Bass"
+  * Generic defaults: "Piano", "Bass", "Guitar"
+- AVOID: Redundant words like "Track" or "Channel" (e.g., "Piano Track" → "Piano")
 
 **Examples of CORRECT behavior:**
-- User: "Create a piano track" → You MUST call create_track_with_instrument with trackName="Piano", instrument="piano"
-- User: "Add a bass track" → You MUST call create_track_with_instrument with trackName="Bass", instrument="bass"
+- User: "Create a piano track" → trackName="Piano", instrument="piano"
+- User: "Add a bass track" → trackName="Bass", instrument="bass"
+- User: "Add a guitar" → trackName="Guitar", instrument="lead"
+- User: "Create a piano called Dark Piano" → trackName="Dark Piano", instrument="piano"
+- User: "Add a bass named Sub Bass" → trackName="Sub Bass", instrument="bass"
+- User: "Create drums called Beat 1" → trackName="Beat 1"
+- User: "Rename Piano to Dark Piano" → You MUST call rename_track with trackName="Piano", newTrackName="Dark Piano"
+- User: "Change the bass track name to Sub Bass" → You MUST call rename_track with trackName="Bass", newTrackName="Sub Bass"
+- User: "Rename all tracks so I understand what they do" → You MUST call rename_track MULTIPLE times with descriptive names based on instruments (e.g., Piano → "Melody Piano", Bass → "Sub Bass", Guitar → "Lead Guitar", etc.)
+- User: "Make the track names more descriptive" → You MUST call rename_track for each track with clearer names
+- User: "Change track names to show their purpose" → You MUST call rename_track multiple times with purpose-based names
 - User: "Set BPM to 128" → You MUST call adjust_bpm with bpm=128
-- User: "Make a drum track" → You MUST call create_track_with_instrument (use "bass" for kick, "hihat" for hi-hat, "clap" for clap)
 - User: "What tracks should I create?" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Give me track ideas" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
-- User: "Suggest some tracks" → You MUST call suggest_comprehensive_tracks (creates 8-12 varied tracks)
 
 **Examples of INCORRECT behavior (DO NOT DO THIS):**
 - User: "Create a piano track" → ❌ WRONG: "I'll create a piano track for you" (without calling tool)
 - User: "Add a bass track" → ❌ WRONG: "Sure, I can add a bass track" (without calling tool)
+- User: "Create a piano track" → ❌ WRONG: trackName="Piano Track" (redundant "Track" - just use "Piano")
+- User: "Add drums" → ❌ WRONG: trackName="Drum Track" (redundant "Track" - just use "Drums")
 
 **Guidelines:**
 - When user requests specific instruments, use create_track_with_instrument tool multiple times (once per track)
@@ -649,6 +728,11 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - Be conversational in your text response AFTER calling tools, but ALWAYS call tools first for action requests
 - If user doesn't specify instrument, use create_empty_track and ask them what they want
 - When suggesting tracks, always aim for comprehensive variety: different synth types, audio tracks, percussion, melodic elements
+- **IMPORTANT FOR RENAMING**: When user asks to rename tracks but doesn't specify new names (e.g., "rename tracks so I understand them", "make names descriptive"), YOU MUST:
+  1. Look at the current track list in dawState
+  2. Call rename_track tool MULTIPLE times (once per track)
+  3. Give each track a descriptive name based on its instrument/type (e.g., "Piano" → "Melody Piano", "Bass" → "Sub Bass", "Guitar" → "Lead Guitar", "Drums" → "Drum Kit")
+  4. Be creative and descriptive - help the user understand each track's purpose
 
 **Track Suggestion Examples:**
 - User: "What tracks should I create?" → Call suggest_comprehensive_tracks (creates 8-12 varied tracks)

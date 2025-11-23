@@ -446,6 +446,22 @@ export default function DawShell() {
             }
             break;
 
+          case 'rename_track':
+            const trackToRename = tracks.find(
+              (t) => t.id === action.trackId || t.name === action.trackName
+            );
+            if (trackToRename && action.newTrackName) {
+              setTracks((prevTracks) =>
+                prevTracks.map((t) =>
+                  t.id === trackToRename.id
+                    ? { ...t, name: action.newTrackName! }
+                    : t
+                )
+              );
+              console.log(`✓ Renamed track "${trackToRename.name}" to "${action.newTrackName}"`);
+            }
+            break;
+
           case 'adjust_volume':
             const trackToAdjust = tracks.find(
               (t) => t.id === action.trackId || t.name === action.trackName
@@ -799,7 +815,7 @@ export default function DawShell() {
       {/* Bottom mixer - dynamically sized based on minimized state */}
       <footer
         className={`${
-          isMixerMinimized ? 'h-8' : 'h-52'
+          isMixerMinimized ? 'h-8' : 'h-60'
         } border-t border-slate-800 bg-slate-950 shrink-0 transition-all duration-200`}
       >
         <Mixer
