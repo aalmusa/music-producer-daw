@@ -35,13 +35,14 @@ async function dawAssistantAgent(
 
 **Current DAW State:**
 - BPM: ${dawState.bpm}
+- Metronome: ${dawState.metronomeEnabled ? 'ON' : 'OFF'}
 - Number of tracks: ${dawState.tracks.length}
 ${
   dawState.tracks.length > 0
     ? `- Tracks:\n${dawState.tracks
         .map(
           (t) =>
-            `  • ${t.name} (${t.type.toUpperCase()}) - Volume: ${(t.volume * 100).toFixed(0)}%, ${t.muted ? 'MUTED' : 'ACTIVE'}${t.type === 'midi' && t.samplerAudioUrl ? ` - Instrument: ${t.samplerAudioUrl}` : ''}`
+            `  • ${t.name} (${t.type.toUpperCase()}) - Volume: ${(t.volume * 100).toFixed(0)}%, ${t.muted ? 'MUTED' : 'ACTIVE'}${t.solo ? ', SOLO' : ''}${t.type === 'midi' && t.samplerAudioUrl ? ` - Instrument: ${t.samplerAudioUrl}` : ''}`
         )
         .join('\n')}`
     : '- No tracks yet'
@@ -55,7 +56,10 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 3. **Adjust Volume**: Set volume levels for specific tracks (0-1 range)
 4. **Adjust BPM**: Change the project tempo
 5. **Select Instruments**: For MIDI tracks, select sampler instruments (available: /audio/clap.wav, /audio/hihat.wav)
-6. **Provide Guidance**: Suggest next steps and creative ideas
+6. **Mute/Unmute Tracks**: Mute or unmute specific tracks or multiple tracks matching a pattern
+7. **Solo/Unsolo Tracks**: Solo or unsolo specific tracks or multiple tracks matching a pattern
+8. **Toggle Metronome**: Turn the metronome on or off
+9. **Provide Guidance**: Suggest next steps and creative ideas
 
 **Available Instruments for MIDI tracks:**
 - /audio/clap.wav - Clap sound
@@ -68,15 +72,22 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
 - adjust_volume: Change track volume
 - adjust_bpm: Change project BPM
 - select_instrument: Set a sampler instrument for a MIDI track
+- mute_tracks: Mute one or more tracks (can use trackPattern to match multiple, e.g., "drum" matches "Drums", "Hi-hat", "Kick")
+- unmute_tracks: Unmute one or more tracks (can use trackPattern to match multiple)
+- solo_tracks: Solo one or more tracks (can use trackPattern to match multiple)
+- unsolo_tracks: Unsolo one or more tracks (can use trackPattern to match multiple)
+- toggle_metronome: Turn metronome on or off
 - none: Just provide guidance/conversation
 
 **Important Guidelines:**
 - Be conversational and helpful
 - When creating tracks, suggest appropriate names based on the instrument or purpose
 - When adjusting volumes, consider mixing best practices
+- When muting/soloing, you can use trackPattern to match multiple tracks (e.g., "drum" matches "Drums", "Hi-hat", "Kick")
+- For pattern matching: case-insensitive partial matches work (e.g., "bass" matches "Bass", "Sub Bass", "Bass Synth")
 - Provide 2-3 creative suggestions for next steps
 - If the user's request is unclear, ask for clarification
-- You can perform multiple actions at once (e.g., create track AND set its volume)
+- You can perform multiple actions at once (e.g., mute drums AND unmute bass)
 
 **Response Format (JSON):**
 {
@@ -91,6 +102,11 @@ ${userContext ? `**User Context:** ${userContext}` : ''}
       // For adjust_volume: trackId or trackName, volume
       // For adjust_bpm: bpm
       // For select_instrument: trackId or trackName, instrumentPath
+      // For mute_tracks: trackId or trackName or trackPattern (for multiple)
+      // For unmute_tracks: trackId or trackName or trackPattern (for multiple)
+      // For solo_tracks: trackId or trackName or trackPattern (for multiple)
+      // For unsolo_tracks: trackId or trackName or trackPattern (for multiple)
+      // For toggle_metronome: metronomeEnabled (true/false)
     }
   ],
   "suggestions": [
@@ -143,6 +159,60 @@ Response:
     "Consider adding compression to control the bass dynamics",
     "Try adding a sub-bass layer for more depth",
     "Adjust other track volumes to maintain a balanced mix"
+  ]
+}
+
+User: "Mute all the drum tracks"
+Response:
+{
+  "message": "I've muted all drum-related tracks. This includes Drums, Hi-hat, and Kick tracks.",
+  "actions": [
+    {
+      "type": "mute_tracks",
+      "trackPattern": "drum",
+      "reasoning": "Muting all tracks that contain 'drum' in their name to isolate other elements"
+    }
+  ],
+  "suggestions": [
+    "Listen to how the bass and melody sound without drums",
+    "Unmute drums when you're ready to add them back",
+    "Try soloing just the bass to hear it clearly"
+  ]
+}
+
+User: "Solo the bass"
+Response:
+{
+  "message": "I've soloed the bass track so you can hear it in isolation.",
+  "actions": [
+    {
+      "type": "solo_tracks",
+      "trackName": "Bass",
+      "reasoning": "Soloing bass track to allow focused listening and editing"
+    }
+  ],
+  "suggestions": [
+    "Check if the bass needs EQ adjustments",
+    "Listen for any timing issues",
+    "Unsolo when done to hear it in the mix"
+  ]
+}
+
+User: "Turn on the metronome"
+Response:
+{
+  "message": "I've enabled the metronome. You'll hear it clicking on each beat when you play.",
+  "actions": [
+    {
+      "type": "toggle_metronome",
+      "metronomeEnabled": true,
+      "reasoning": "Enabling metronome to help with timing and tempo reference"
+    }
+  ],
+  "suggestions": [
+    "Use the metronome to stay in time while recording",
+    "Turn it off once you're comfortable with the tempo",
+    "Adjust BPM if the tempo doesn't feel right"
   ]
 }
 

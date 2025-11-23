@@ -45,6 +45,7 @@ export interface DAWState {
     samplerAudioUrl?: string;
   }>;
   bpm: number;
+  metronomeEnabled: boolean;
 }
 
 export interface DAWAssistantRequest {
@@ -60,13 +61,23 @@ export interface DAWAction {
     | 'adjust_volume'
     | 'adjust_bpm'
     | 'select_instrument'
+    | 'mute_tracks'
+    | 'unmute_tracks'
+    | 'solo_tracks'
+    | 'unsolo_tracks'
+    | 'toggle_metronome'
     | 'none';
   trackId?: string;
+  trackIds?: string[]; // For multiple track operations
   trackType?: 'audio' | 'midi';
   trackName?: string;
+  trackPattern?: string; // For pattern matching (e.g., "drum", "bass")
   instrumentPath?: string;
   volume?: number;
   bpm?: number;
+  muted?: boolean;
+  soloed?: boolean;
+  metronomeEnabled?: boolean;
   reasoning: string;
 }
 

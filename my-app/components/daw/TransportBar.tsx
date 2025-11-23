@@ -13,12 +13,13 @@ import {
 interface TransportBarProps {
   bpm: number;
   onBpmChange: (bpm: number) => void;
+  metronomeEnabled: boolean;
+  onMetronomeToggle: (enabled: boolean) => void;
 }
 
-export default function TransportBar({ bpm, onBpmChange }: TransportBarProps) {
+export default function TransportBar({ bpm, onBpmChange, metronomeEnabled, onMetronomeToggle }: TransportBarProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState("0.0.0");
-  const [metronomeOn, setMetronomeOn] = useState(false);
 
   // Update position while playing
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function TransportBar({ bpm, onBpmChange }: TransportBarProps) {
   const handleToggleMetronome = async () => {
     await initAudio();
     const enabled = toggleMetronome();
-    setMetronomeOn(enabled);
+    onMetronomeToggle(enabled);
   };
 
   return (
@@ -104,7 +105,7 @@ export default function TransportBar({ bpm, onBpmChange }: TransportBarProps) {
       <div className="flex items-center gap-3 text-xs text-slate-400">
         <button
           className={`px-2 py-1 rounded border transition-colors ${
-            metronomeOn
+            metronomeEnabled
               ? "border-green-500 bg-green-500 bg-opacity-20 text-green-300"
               : "border-slate-700 hover:bg-slate-800"
           }`}

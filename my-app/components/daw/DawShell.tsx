@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  initAudio,
   removeAllAudioLoopPlayers,
   removeMidiTrack,
   setBpm as setAudioEngineBpm,
@@ -9,6 +10,7 @@ import {
   setMasterVolume,
   setTrackMute,
   setTrackVolume,
+  toggleMetronome,
   updateMidiParts,
 } from '@/lib/audioEngine';
 import { AudioFile } from '@/lib/audioLibrary';
@@ -56,6 +58,9 @@ export default function DawShell() {
 
   // Master volume state (0 to 1)
   const [masterVolume, setMasterVolumeState] = useState(1);
+
+  // Metronome state
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
 
   // Track data with MIDI support
   const [tracks, setTracks] = useState<Track[]>([
@@ -274,12 +279,34 @@ export default function DawShell() {
     setMasterVolume(volume);
   }, []);
 
+  const handleMetronomeToggle = useCallback((enabled: boolean) => {
+    setMetronomeEnabled(enabled);
+  }, []);
+
+  const handleToggleMetronomeFromAI = useCallback(async () => {
+    await initAudio(); // Ensure audio is initialized
+    const newState = toggleMetronome();
+    setMetronomeEnabled(newState);
+    return newState;
+  }, []);
+
+  // Helper function to find tracks by pattern (case-insensitive partial match)
+  const findTracksByPattern = useCallback(
+    (pattern: string) => {
+      const lowerPattern = pattern.toLowerCase();
+      return tracks.filter((track) =>
+        track.name.toLowerCase().includes(lowerPattern)
+      );
+    },
+    [tracks]
+  );
+
   // Handle AI assistant actions
   const handleAIAssistantActions = useCallback(
-    (response: DAWAssistantResponse) => {
+    async (response: DAWAssistantResponse) => {
       if (!response.success || response.actions.length === 0) return;
 
-      response.actions.forEach((action) => {
+      for (const action of response.actions) {
         switch (action.type) {
           case 'create_track':
             if (action.trackType) {
@@ -359,6 +386,132 @@ export default function DawShell() {
             }
             break;
 
+          case 'mute_tracks': {
+            // Mute tracks by pattern, ID, or name
+            let tracksToMute: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToMute = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToMute = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToMute = [track];
+            }
+
+            tracksToMute.forEach((track) => {
+              if (!track.muted) {
+                handleToggleMute(track.id);
+              }
+            });
+
+            if (tracksToMute.length > 0) {
+              console.log(
+                `✓ Muted ${tracksToMute.length} track(s): ${tracksToMute
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'unmute_tracks': {
+            // Unmute tracks by pattern, ID, or name
+            let tracksToUnmute: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToUnmute = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToUnmute = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToUnmute = [track];
+            }
+
+            tracksToUnmute.forEach((track) => {
+              if (track.muted) {
+                handleToggleMute(track.id);
+              }
+            });
+
+            if (tracksToUnmute.length > 0) {
+              console.log(
+                `✓ Unmuted ${tracksToUnmute.length} track(s): ${tracksToUnmute
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'solo_tracks': {
+            // Solo tracks by pattern, ID, or name
+            let tracksToSolo: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToSolo = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToSolo = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToSolo = [track];
+            }
+
+            tracksToSolo.forEach((track) => {
+              if (!track.solo) {
+                handleToggleSolo(track.id);
+              }
+            });
+
+            if (tracksToSolo.length > 0) {
+              console.log(
+                `✓ Soloed ${tracksToSolo.length} track(s): ${tracksToSolo
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'unsolo_tracks': {
+            // Unsolo tracks by pattern, ID, or name
+            let tracksToUnsolo: Track[] = [];
+
+            if (action.trackPattern) {
+              tracksToUnsolo = findTracksByPattern(action.trackPattern);
+            } else if (action.trackId) {
+              const track = tracks.find((t) => t.id === action.trackId);
+              if (track) tracksToUnsolo = [track];
+            } else if (action.trackName) {
+              const track = tracks.find((t) => t.name === action.trackName);
+              if (track) tracksToUnsolo = [track];
+            }
+
+            tracksToUnsolo.forEach((track) => {
+              if (track.solo) {
+                handleToggleSolo(track.id);
+              }
+            });
+
+            if (tracksToUnsolo.length > 0) {
+              console.log(
+                `✓ Unsoloed ${tracksToUnsolo.length} track(s): ${tracksToUnsolo
+                  .map((t) => t.name)
+                  .join(', ')}`
+              );
+            }
+            break;
+          }
+
+          case 'toggle_metronome': {
+            const newState = await handleToggleMetronomeFromAI();
+            console.log(`✓ Metronome ${newState ? 'enabled' : 'disabled'}`);
+            break;
+          }
+
           case 'none':
             // No action needed, just conversation
             break;
@@ -366,7 +519,7 @@ export default function DawShell() {
           default:
             console.warn('Unknown action type:', action.type);
         }
-      });
+      }
     },
     [
       tracks,
@@ -374,6 +527,10 @@ export default function DawShell() {
       handleVolumeChange,
       handleBpmChange,
       handleAttachSampleToMidiTrack,
+      handleToggleMute,
+      handleToggleSolo,
+      handleToggleMetronomeFromAI,
+      findTracksByPattern,
     ]
   );
 
@@ -410,7 +567,12 @@ export default function DawShell() {
     <main className='h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden'>
       {/* Top transport bar */}
       <header className='h-16 border-b border-slate-800 flex items-center px-4 shrink-0'>
-        <TransportBar bpm={bpm} onBpmChange={handleBpmChange} />
+        <TransportBar
+          bpm={bpm}
+          onBpmChange={handleBpmChange}
+          metronomeEnabled={metronomeEnabled}
+          onMetronomeToggle={handleMetronomeToggle}
+        />
       </header>
 
       {/* Middle content: tracks + timeline + right sidebar */}
@@ -458,6 +620,7 @@ export default function DawShell() {
                 samplerAudioUrl: t.samplerAudioUrl ?? undefined,
               })),
               bpm,
+              metronomeEnabled,
             }}
             onActionsReceived={handleAIAssistantActions}
           />
