@@ -236,6 +236,14 @@ export default function DawShell() {
     });
   }, []);
 
+  const handleRenameTrack = useCallback((trackId: string, newName: string) => {
+    setTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId ? { ...track, name: newName } : track
+      )
+    );
+  }, []);
+
   const handleRightMouseDown = useCallback(() => {
     setIsResizingRight(true);
   }, []);
@@ -285,6 +293,7 @@ export default function DawShell() {
               onAddTrack={handleAddTrackClick}
               onDeleteTrack={handleDeleteTrack}
               onAttachSample={handleAttachSampleToMidiTrack}
+              onRenameTrack={handleRenameTrack}
             />
           </aside>
 
