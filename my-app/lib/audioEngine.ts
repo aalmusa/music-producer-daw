@@ -13,6 +13,20 @@ let metronomeEnabled = false; // Metronome state
 let metronomeLoop: Tone.Loop | null = null;
 let metronomeSynth: Tone.MembraneSynth | null = null;
 
+// Master volume control - lazy initialization
+let masterGain: Tone.Gain | null = null;
+
+/**
+ * Gets or creates the master gain node
+ * This uses lazy initialization because Tone.js nodes can only be created after the audio context exists
+ */
+function getMasterGain(): Tone.Gain {
+  if (!masterGain) {
+    masterGain = new Tone.Gain(1).toDestination();
+  }
+  return masterGain;
+}
+
 // MIDI synthesizers and parts
 const synthMap = new Map<string, Tone.PolySynth>();
 const midiPartMap = new Map<string, Tone.Part[]>(); // Now stores array of parts per track
@@ -31,7 +45,9 @@ export async function initAudio() {
     transport.loopStart = 0;
     transport.loopEnd = `${LOOP_BARS}m`;
 
-    metronomeSynth = new Tone.MembraneSynth().toDestination();
+    // Initialize master gain (lazy initialization)
+    const master = getMasterGain();
+    metronomeSynth = new Tone.MembraneSynth().connect(master);
 
     // Click every quarter note
     metronomeLoop = new Tone.Loop((time: number) => {
@@ -108,6 +124,7 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
   let synth = synthMap.get(trackId);
 
   if (!synth) {
+    // Always connect to master gain (lazy initialization)
     synth = new Tone.PolySynth(Tone.Synth, {
       oscillator: {
         type: 'triangle',
@@ -118,7 +135,7 @@ export function getSynthForTrack(trackId: string): Tone.PolySynth {
         sustain: 0.3,
         release: 1,
       },
-    }).toDestination();
+    }).connect(getMasterGain());
 
     synthMap.set(trackId, synth);
   }
@@ -143,6 +160,7 @@ export async function getSamplerForTrack(
     samplerMap.delete(trackId);
   }
 
+  // Always connect to master gain (lazy initialization)
   // Create new sampler with C3 as the root note
   // Tone.js will automatically pitch-shift the sample for other notes
   const sampler = new Tone.Sampler(
@@ -157,7 +175,7 @@ export async function getSamplerForTrack(
         console.error(`✗ Failed to load sample for track ${trackId}:`, err);
       },
     }
-  ).toDestination();
+  ).connect(getMasterGain());
 
   samplerMap.set(trackId, sampler);
 
@@ -331,7 +349,7 @@ export function setTrackMute(trackId: string, muted: boolean) {
 }
 
 /**
- * Sets the volume for a track's synth
+ * Sets the volume for a track's synth or sampler
  */
 export function setTrackVolume(trackId: string, volume: number) {
   const synth = synthMap.get(trackId);
@@ -340,6 +358,28 @@ export function setTrackVolume(trackId: string, volume: number) {
     const db = volume === 0 ? -Infinity : (volume - 1) * 24;
     synth.volume.value = db;
   }
+
+  const sampler = samplerMap.get(trackId);
+  if (sampler) {
+    // Convert 0-1 range to decibels (-24 to 0)
+    const db = volume === 0 ? -Infinity : (volume - 1) * 24;
+    sampler.volume.value = db;
+  }
+}
+
+/**
+ * Sets the master volume for all audio output
+ */
+export function setMasterVolume(volume: number) {
+  // Convert 0-1 range to gain value (0 to 1)
+  // Using linear scale for master to avoid excessive attenuation
+  const master = getMasterGain();
+  master.gain.rampTo(volume, 0.05);
+  console.log(
+    `✓ Master volume set to ${volume.toFixed(2)} (${((volume - 1) * 24).toFixed(
+      1
+    )} dB)`
+  );
 }
 
 /**
@@ -369,7 +409,7 @@ export async function createAudioLoopPlayer(
   startBar: number = 0
 ): Promise<Tone.Player> {
   const playerKey = `${trackId}:${clipId}`;
-  
+
   // Remove existing player if it exists
   const existingPlayer = audioPlayerMap.get(playerKey);
   if (existingPlayer) {
@@ -383,6 +423,7 @@ export async function createAudioLoopPlayer(
   }
 
   return new Promise((resolve, reject) => {
+    // Always connect to master gain (lazy initialization)
     // Create a new player without looping (play once through 4 bars)
     const player = new Tone.Player({
       url: audioUrl,
@@ -391,27 +432,30 @@ export async function createAudioLoopPlayer(
         try {
           // Calculate the duration of 4 bars at current BPM
           const fourBarsDuration = transport.toSeconds('4m');
-          
+
           // Check if buffer is loaded
           if (!player.buffer || !player.buffer.loaded) {
             console.error('Buffer not loaded properly');
             reject(new Error('Buffer not loaded'));
             return;
           }
-          
+
           // Set playback rate to fit the audio into exactly 4 bars
           // This quantizes the clip to the project's BPM
           const originalDuration = player.buffer.duration;
           const playbackRate = originalDuration / fourBarsDuration;
           player.playbackRate = playbackRate;
-          
+
           // Sync player with transport
           // Start at the clip's position and stop after 4 bars
-          player.sync().start(`${startBar}m`).stop(`${startBar + 4}m`);
-          
+          player
+            .sync()
+            .start(`${startBar}m`)
+            .stop(`${startBar + 4}m`);
+
           // Store in map
           audioPlayerMap.set(playerKey, player);
-          
+
           console.log(
             `✓ Audio clip loaded for clip ${clipId} on track ${trackId}:`,
             `original=${originalDuration.toFixed(2)}s,`,
@@ -419,7 +463,7 @@ export async function createAudioLoopPlayer(
             `rate=${playbackRate.toFixed(3)},`,
             `startBar=${startBar}-${startBar + 4}`
           );
-          
+
           resolve(player);
         } catch (error) {
           console.error(`✗ Error setting up audio player:`, error);
@@ -430,7 +474,7 @@ export async function createAudioLoopPlayer(
         console.error(`✗ Failed to load audio for clip ${clipId}:`, error);
         reject(error);
       },
-    }).toDestination();
+    }).connect(getMasterGain());
   });
 }
 
@@ -439,12 +483,12 @@ export async function createAudioLoopPlayer(
  */
 export function updateAudioLoopBpm() {
   const fourBarsDuration = transport.toSeconds('4m');
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     const originalDuration = player.buffer.duration;
     const playbackRate = originalDuration / fourBarsDuration;
     player.playbackRate = playbackRate;
-    
+
     console.log(
       `Updated clip playback rate for ${playerKey}: ${playbackRate.toFixed(3)}`
     );
@@ -480,7 +524,7 @@ export function removeAudioLoopPlayer(trackId: string, clipId: string) {
  */
 export function removeAllAudioLoopPlayers(trackId: string) {
   const keysToRemove: string[] = [];
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     if (playerKey.startsWith(`${trackId}:`)) {
       try {
@@ -496,11 +540,13 @@ export function removeAllAudioLoopPlayers(trackId: string) {
       keysToRemove.push(playerKey);
     }
   });
-  
-  keysToRemove.forEach(key => audioPlayerMap.delete(key));
-  
+
+  keysToRemove.forEach((key) => audioPlayerMap.delete(key));
+
   if (keysToRemove.length > 0) {
-    console.log(`✓ Removed ${keysToRemove.length} audio clip player(s) for track ${trackId}`);
+    console.log(
+      `✓ Removed ${keysToRemove.length} audio clip player(s) for track ${trackId}`
+    );
   }
 }
 
@@ -510,7 +556,7 @@ export function removeAllAudioLoopPlayers(trackId: string) {
 export function setAudioLoopVolume(trackId: string, volume: number) {
   // Convert 0-1 range to decibels (-24 to 0)
   const db = volume === 0 ? -Infinity : (volume - 1) * 24;
-  
+
   audioPlayerMap.forEach((player, playerKey) => {
     if (playerKey.startsWith(`${trackId}:`)) {
       player.volume.value = db;

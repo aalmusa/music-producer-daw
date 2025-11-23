@@ -6,6 +6,7 @@ import {
   setBpm as setAudioEngineBpm,
   setAudioLoopMute,
   setAudioLoopVolume,
+  setMasterVolume,
   setTrackMute,
   setTrackVolume,
   updateMidiParts,
@@ -52,6 +53,9 @@ export default function DawShell() {
 
   // BPM state
   const [bpm, setBpm] = useState(120);
+
+  // Master volume state (0 to 1)
+  const [masterVolume, setMasterVolumeState] = useState(1);
 
   // Track data with MIDI support
   const [tracks, setTracks] = useState<Track[]>([
@@ -265,6 +269,11 @@ export default function DawShell() {
     setAudioEngineBpm(newBpm);
   }, []);
 
+  const handleMasterVolumeChange = useCallback((volume: number) => {
+    setMasterVolumeState(volume);
+    setMasterVolume(volume);
+  }, []);
+
   // Handle AI assistant actions
   const handleAIAssistantActions = useCallback(
     (response: DAWAssistantResponse) => {
@@ -457,7 +466,12 @@ export default function DawShell() {
 
       {/* Bottom mixer - made a bit taller */}
       <footer className='h-52 border-t border-slate-800 bg-slate-950 shrink-0'>
-        <Mixer tracks={tracks} />
+        <Mixer
+          tracks={tracks}
+          masterVolume={masterVolume}
+          onTrackVolumeChange={handleVolumeChange}
+          onMasterVolumeChange={handleMasterVolumeChange}
+        />
       </footer>
 
       {/* Track type selection dialog */}
