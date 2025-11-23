@@ -7,9 +7,15 @@ import {
   removeAudioLoopPlayer,
   updateMidiParts,
 } from '@/lib/audioEngine';
-import { createEmptyMidiClip, MidiClipData, Track } from '@/lib/midiTypes';
+import {
+  createAudioClip,
+  createEmptyMidiClip,
+  MidiClipData,
+  Track,
+} from '@/lib/midiTypes';
 import { useEffect, useRef, useState } from 'react';
 import AudioClip from './AudioClip';
+import AudioClipGeneratorModal from './AudioClipGeneratorModal';
 import MidiClip from './MidiClip';
 import PianoRollModal from './PianoRollModal';
 
@@ -28,6 +34,12 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
   const [pianoRollOpen, setPianoRollOpen] = useState(false);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+
+  // Audio generator modal state
+  const [audioGenModalOpen, setAudioGenModalOpen] = useState(false);
+  const [audioGenTrackId, setAudioGenTrackId] = useState<string | null>(null);
+  const [audioGenClipId, setAudioGenClipId] = useState<string | null>(null);
+  const [audioGenStartBar, setAudioGenStartBar] = useState(0);
 
   // Track which clips have been initialized to avoid duplicates
   const [initializedClips, setInitializedClips] = useState<Set<string>>(
@@ -278,6 +290,90 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
     setEditingClipId(null);
   };
 
+  // Open audio generator modal for new clip
+  const handleOpenAudioGenerator = (trackId: string, startBar: number) => {
+    setAudioGenTrackId(trackId);
+    setAudioGenClipId(null); // null means adding new
+    setAudioGenStartBar(startBar);
+    setAudioGenModalOpen(true);
+  };
+
+  // Open audio generator modal for replacing existing clip
+  const handleReplaceAudioClip = (
+    trackId: string,
+    clipId: string,
+    startBar: number
+  ) => {
+    setAudioGenTrackId(trackId);
+    setAudioGenClipId(clipId); // clipId means replacing
+    setAudioGenStartBar(startBar);
+    setAudioGenModalOpen(true);
+  };
+
+  // Handle generated audio clip (add or replace)
+  const handleAudioClipGenerated = (audioUrl: string, clipName: string) => {
+    if (!audioGenTrackId) return;
+
+    if (audioGenClipId) {
+      // Replace existing clip
+
+      // Remove old player and initialized state BEFORE updating tracks
+      removeAudioLoopPlayer(audioGenTrackId, audioGenClipId);
+      const clipKey = `${audioGenTrackId}:${audioGenClipId}`;
+      setInitializedClips((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(clipKey);
+        return newSet;
+      });
+
+      // Update tracks with new audio
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id !== audioGenTrackId) return track;
+
+          const updatedClips = (track.audioClips || []).map((clip) => {
+            if (clip.id === audioGenClipId) {
+              // Return updated clip with new audio
+              return {
+                ...clip,
+                audioUrl,
+                name: clipName,
+              };
+            }
+            return clip;
+          });
+
+          return { ...track, audioClips: updatedClips };
+        })
+      );
+    } else {
+      // Add new clip
+      const newClip = createAudioClip(audioUrl, audioGenStartBar, clipName);
+
+      setTracks((prev) =>
+        prev.map((track) => {
+          if (track.id !== audioGenTrackId) return track;
+
+          const existingClips = track.audioClips || [];
+          const updatedClips = [...existingClips, newClip];
+
+          return { ...track, audioClips: updatedClips };
+        })
+      );
+    }
+
+    // Close modal
+    setAudioGenModalOpen(false);
+  };
+
+  // Close audio generator modal
+  const handleCloseAudioGenerator = () => {
+    setAudioGenModalOpen(false);
+    setAudioGenTrackId(null);
+    setAudioGenClipId(null);
+    setAudioGenStartBar(0);
+  };
+
   // Get the clip being edited
   const editingTrack = tracks.find((t) => t.id === editingTrackId);
   const editingClip = editingTrack?.midiClips?.find(
@@ -381,16 +477,37 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                     const slotWidthPercent = (4 / measureCount) * 100;
 
                     return (
-                      <div
+                      <button
                         key={`empty-audio-${startBar}`}
-                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 flex items-center justify-center text-slate-600 pointer-events-none'
+                        className='absolute h-12 rounded border-2 border-dashed border-slate-700/50 bg-slate-800/20 hover:bg-slate-800/40 hover:border-emerald-600/70 flex items-center justify-center text-slate-600 hover:text-emerald-400 transition-all cursor-pointer group'
                         style={{
                           left: `${slotLeftPercent}%`,
                           width: `${slotWidthPercent}%`,
                         }}
+                        onClick={() =>
+                          handleOpenAudioGenerator(track.id, startBar)
+                        }
+                        title='Click to generate audio for this slot'
                       >
-                        <span className='text-xs'>Empty Slot</span>
-                      </div>
+                        <div className='flex flex-col items-center'>
+                          <svg
+                            className='w-6 h-6 opacity-50 group-hover:opacity-100 transition-opacity'
+                            fill='none'
+                            stroke='currentColor'
+                            viewBox='0 0 24 24'
+                          >
+                            <path
+                              strokeLinecap='round'
+                              strokeLinejoin='round'
+                              strokeWidth={2}
+                              d='M13 10V3L4 14h7v7l9-11h-7z'
+                            />
+                          </svg>
+                          <span className='text-[10px] mt-1 opacity-0 group-hover:opacity-100 transition-opacity'>
+                            Generate
+                          </span>
+                        </div>
+                      </button>
                     );
                   })}
 
@@ -405,6 +522,9 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
                         handleMoveAudioClip(track.id, clip.id, newStartBar)
                       }
                       onDelete={() => handleDeleteAudioClip(track.id, clip.id)}
+                      onRegenerate={() =>
+                        handleReplaceAudioClip(track.id, clip.id, clip.startBar)
+                      }
                     />
                   ))}
                 </>
@@ -488,6 +608,18 @@ export default function Timeline({ tracks, setTracks }: TimelineProps) {
           onUpdateClip={(clipData) =>
             handleUpdateMidiClip(editingTrack.id, editingClip.id, clipData)
           }
+        />
+      )}
+
+      {/* Audio Clip Generator Modal */}
+      {audioGenTrackId && (
+        <AudioClipGeneratorModal
+          isOpen={audioGenModalOpen}
+          onClose={handleCloseAudioGenerator}
+          trackId={audioGenTrackId}
+          clipId={audioGenClipId ?? undefined}
+          startBar={audioGenStartBar}
+          onClipGenerated={handleAudioClipGenerated}
         />
       )}
     </div>

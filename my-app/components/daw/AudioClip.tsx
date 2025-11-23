@@ -16,6 +16,7 @@ interface AudioClipProps {
   totalBars: number; // Total bars in timeline
   onMove: (newStartBar: number) => void;
   onDelete: () => void;
+  onRegenerate?: () => void; // Optional callback for regenerating/replacing clip
 }
 
 export default function AudioClip({
@@ -24,6 +25,7 @@ export default function AudioClip({
   totalBars,
   onMove,
   onDelete,
+  onRegenerate,
 }: AudioClipProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
@@ -171,8 +173,15 @@ export default function AudioClip({
       <div className='h-full flex flex-col'>
         {/* Waveform container */}
         <div
-          className='waveform-container flex-1 px-2 py-1'
+          className='waveform-container flex-1 px-2 py-1 cursor-pointer'
           ref={containerRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onRegenerate) {
+              onRegenerate();
+            }
+          }}
+          title='Click to regenerate or replace this clip'
         />
         
         {/* Clip info overlay */}
