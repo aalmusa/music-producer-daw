@@ -42,6 +42,8 @@ export interface DAWState {
     volume: number;
     muted: boolean;
     solo: boolean;
+    instrumentMode?: 'synth' | 'sampler' | null;
+    synthPreset?: string;
     samplerAudioUrl?: string;
   }>;
   bpm: number;
@@ -61,6 +63,8 @@ export interface DAWAction {
     | 'adjust_volume'
     | 'adjust_bpm'
     | 'select_instrument'
+    | 'set_instrument_mode' // New: Set synth or sampler mode
+    | 'set_synth_preset' // New: Set synth preset
     | 'mute_tracks'
     | 'unmute_tracks'
     | 'solo_tracks'
@@ -73,6 +77,8 @@ export interface DAWAction {
   trackName?: string;
   trackPattern?: string; // For pattern matching (e.g., "drum", "bass")
   instrumentPath?: string;
+  instrumentMode?: 'synth' | 'sampler'; // For set_instrument_mode
+  synthPreset?: string; // For set_synth_preset (e.g., 'piano', 'bass', 'lead', 'pad', 'bells', 'pluck')
   volume?: number;
   bpm?: number;
   muted?: boolean;

@@ -1,11 +1,17 @@
 // lib/audioLibrary.ts
 /**
  * Audio Library Configuration
- * Defines available audio files and their metadata
+ * Defines available audio files and their metadata for use in sampler mode
  * 
  * NOTE: All audio tracks are automatically quantized to 4-bar clips
  * and synced to the project BPM using Tone.js time-stretching.
  * Each clip plays once through its 4-bar duration (no looping).
+ * 
+ * INSTRUMENT COVERAGE:
+ * - Sampler audio files (this file): clap, hi-hat
+ * - Synth presets (synthPresets.ts): piano, bass, lead, pad, bells, pluck
+ * 
+ * For instruments not in library, recommend generating audio loops.
  */
 
 export interface AudioFile {
