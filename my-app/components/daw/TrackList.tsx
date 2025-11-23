@@ -381,8 +381,12 @@ export default function TrackList({
 
                       <button
                         onClick={() => {
-                          onSetInstrumentMode?.(track.id, 'synth');
-                          onAttachSample?.(track.id, null); // Clear sample
+                          // Clear sample first, then switch mode
+                          onAttachSample?.(track.id, null);
+                          // Use setTimeout to ensure sample is cleared before switching
+                          setTimeout(() => {
+                            onSetInstrumentMode?.(track.id, 'synth');
+                          }, 0);
                         }}
                         className='w-full px-2 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded'
                       >

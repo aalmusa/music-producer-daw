@@ -367,6 +367,13 @@ export default function DawShell() {
                 mode === 'sampler' ? track.samplerAudioUrl : undefined,
             };
 
+            // Update the audio engine with the new mode
+            if (track.midiClips) {
+              const samplerUrl = mode === 'sampler' ? track.samplerAudioUrl : undefined;
+              const synthPreset = mode === 'synth' ? track.synthPreset : undefined;
+              updateMidiParts(trackId, track.midiClips, samplerUrl, synthPreset);
+            }
+
             return updatedTrack;
           }
           return track;

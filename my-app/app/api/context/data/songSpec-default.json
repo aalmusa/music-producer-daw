@@ -11,10 +11,21 @@
       "energySegments": [],
       "genres": [],
       "moods": []
+    },
+    {
+      "id": "ref-1",
+      "sourcePath": "/Users/alial-musawi/Downloads/new/music-producer-daw/my-app/audio/1763902302391-Love Songs (Bonus).mp3.wav",
+      "bpm": 110.31187926153204,
+      "key": "F",
+      "scale": "major",
+      "strength": 0.9093865752220154,
+      "energySegments": [],
+      "genres": [],
+      "moods": []
     }
   ],
   "createdAt": "2025-11-23T11:11:42.640Z",
-  "updatedAt": "2025-11-23T12:07:42.274Z",
+  "updatedAt": "2025-11-23T13:15:40.002Z",
   "aggregate": {
     "bpm": 110,
     "key": "F",
@@ -29,7 +40,7 @@
     "genres": [],
     "moods": []
   },
-  "bpm": 110,
+  "bpm": 80,
   "key": "F",
   "scale": "major",
   "instruments": [
@@ -71,6 +82,6 @@
       ]
     }
   },
-  "genre": "electronic dance",
-  "mood": "energetic"
+  "genre": "lo-fi hip hop",
+  "mood": "chill"
 }
