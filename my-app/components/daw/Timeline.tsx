@@ -26,6 +26,8 @@ interface TimelineProps {
   setTracks: React.Dispatch<React.SetStateAction<Track[]>>;
   trackHeight: number;
   setTrackHeight: React.Dispatch<React.SetStateAction<number>>;
+  bpm: number;
+  metronomeEnabled: boolean;
 }
 
 export default function Timeline({
@@ -33,6 +35,8 @@ export default function Timeline({
   setTracks,
   trackHeight,
   setTrackHeight,
+  bpm,
+  metronomeEnabled,
 }: TimelineProps) {
   const measureCount = LOOP_BARS;
 
@@ -964,6 +968,21 @@ export default function Timeline({
           onUpdateClip={(clipData) =>
             handleUpdateMidiClip(editingTrack.id, editingClip.id, clipData)
           }
+          dawState={{
+            tracks: tracks.map((t) => ({
+              id: t.id,
+              name: t.name,
+              type: t.type,
+              volume: t.volume,
+              muted: t.muted,
+              solo: t.solo,
+              instrumentMode: t.instrumentMode,
+              synthPreset: t.synthPreset,
+              samplerAudioUrl: t.samplerAudioUrl,
+            })),
+            bpm,
+            metronomeEnabled,
+          }}
         />
       )}
 

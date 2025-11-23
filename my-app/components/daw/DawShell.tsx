@@ -757,6 +757,8 @@ export default function DawShell() {
               setTracks={setTracks}
               trackHeight={trackHeight}
               setTrackHeight={setTrackHeight}
+              bpm={bpm}
+              metronomeEnabled={metronomeEnabled}
             />
           </div>
         </div>
