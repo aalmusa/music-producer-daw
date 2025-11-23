@@ -2,6 +2,7 @@
 
 import { previewNote } from '@/lib/audioEngine';
 import { MidiClipData, MidiNote, noteNumberToName } from '@/lib/midiTypes';
+import { DAWState } from '@/types/music-production';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface PianoRollModalProps {
@@ -12,6 +13,7 @@ interface PianoRollModalProps {
   trackColor: string;
   clipData: MidiClipData;
   onUpdateClip: (clipData: MidiClipData) => void;
+  dawState: DAWState;
 }
 
 // Piano roll configuration
@@ -27,6 +29,7 @@ export default function PianoRollModal({
   trackColor,
   clipData,
   onUpdateClip,
+  dawState,
 }: PianoRollModalProps) {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -270,18 +273,23 @@ export default function PianoRollModal({
     setIsProcessing(true);
 
     try {
-      // Call the assistant API
-      const response = await fetch('/api/assistant-agent', {
+      // Call the MIDI assistant API
+      const response = await fetch('/api/midi-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
+          dawState,
           clipData,
           trackId,
+          trackName,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to get response');
+      }
 
       const data = await response.json();
 
@@ -301,7 +309,10 @@ export default function PianoRollModal({
         ...prev,
         {
           role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
+          content:
+            error instanceof Error
+              ? `Sorry, I encountered an error: ${error.message}`
+              : 'Sorry, I encountered an error. Please try again.',
         },
       ]);
     } finally {

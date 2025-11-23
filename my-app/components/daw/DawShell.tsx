@@ -4,21 +4,20 @@ import {
   initAudio,
   removeAllAudioLoopPlayers,
   removeMidiTrack,
+  rewindToStart,
   setBpm as setAudioEngineBpm,
   setAudioLoopMute,
   setAudioLoopVolume,
   setMasterVolume,
   setTrackMute,
   setTrackVolume,
-  toggleMetronome,
-  updateMidiParts,
-  togglePlayPause,
-  rewindToStart,
-  skipForwardBars,
   skipBackBars,
-  isTransportPlaying,
+  skipForwardBars,
+  toggleMetronome,
+  togglePlayPause,
+  updateMidiParts,
 } from '@/lib/audioEngine';
-import { createAudioClip, createEmptyMidiClip, Track } from '@/lib/midiTypes';
+import { createEmptyMidiClip, Track } from '@/lib/midiTypes';
 import { DAWAssistantResponse } from '@/types/music-production';
 import { useCallback, useEffect, useState } from 'react';
 import AIAssistant from './AIAssistant';
@@ -72,7 +71,11 @@ export default function DawShell() {
     const handleKeyDown = async (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input field
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
         return;
       }
 
@@ -755,6 +758,8 @@ export default function DawShell() {
             setTracks={setTracks}
             trackHeight={trackHeight}
             setTrackHeight={setTrackHeight}
+            bpm={bpm}
+            metronomeEnabled={metronomeEnabled}
           />
         </SyncScrollContainer>
 
@@ -792,7 +797,11 @@ export default function DawShell() {
       </section>
 
       {/* Bottom mixer - dynamically sized based on minimized state */}
-      <footer className={`${isMixerMinimized ? 'h-8' : 'h-52'} border-t border-slate-800 bg-slate-950 shrink-0 transition-all duration-200`}>
+      <footer
+        className={`${
+          isMixerMinimized ? 'h-8' : 'h-52'
+        } border-t border-slate-800 bg-slate-950 shrink-0 transition-all duration-200`}
+      >
         <Mixer
           tracks={tracks}
           masterVolume={masterVolume}
